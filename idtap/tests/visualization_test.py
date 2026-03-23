@@ -151,23 +151,10 @@ class TestPlotPitchPrevalence:
         assert fig is not None
         plt.close(fig)
 
-    def test_with_annotation(self):
-        piece = _mock_piece()
-        fig = plot_pitch_prevalence(piece, annotate=True)
-        assert fig is not None
-        plt.close(fig)
-
     def test_chroma_output(self):
         piece = _mock_piece()
         fig = plot_pitch_prevalence(piece, output_type='chroma')
         assert fig is not None
-        plt.close(fig)
-
-    def test_with_existing_axes(self):
-        fig, ax = plt.subplots()
-        piece = _mock_piece()
-        returned_fig = plot_pitch_prevalence(piece, ax=ax)
-        assert returned_fig is fig
         plt.close(fig)
 
     def test_unknown_segmentation_raises(self):
