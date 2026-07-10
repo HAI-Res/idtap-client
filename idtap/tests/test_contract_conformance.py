@@ -19,6 +19,7 @@ import pytest
 
 from idtap.classes.pitch import Pitch
 from idtap.classes.trajectory import Trajectory
+from idtap.classes.phrase import Phrase
 
 
 def _contract_dir():
@@ -112,3 +113,32 @@ def test_trajectory_to_json_strips_fields():
     keys = set(t.to_json().keys())
     for stripped in ("name", "instrumentation", "tags"):
         assert stripped not in keys, f"to_json still emits {stripped}"
+
+
+# --------------------------------------------------------------------------- phrase
+PHRASE_FIXTURES = _fixtures("phrase")
+
+
+@pytest.mark.parametrize("path", PHRASE_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_phrase_conformance(path):
+    fx = _load(path)
+    ctx = fx.get("context") or {}
+    ph = Phrase.from_json(
+        fx["phraseJson"],
+        ratios=ctx.get("ratios"),
+        fundamental=ctx.get("fundamental"),
+    )
+    rel = fx.get("tolerance", {}).get("rel", 1e-9)
+    got = [p.frequency for row in ph.trajectory_grid for t in row for p in t.pitches]
+    want = fx["expected"]["pitchFrequencies"]
+    assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
+    for g, w in zip(got, want):
+        assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"
+
+
+def test_phrase_to_json_strips_raga():
+    """to_json() must NOT include raga (inherited from the piece)."""
+    from idtap.classes.raga import Raga
+    ph = Phrase({"trajectories": [Trajectory({"id": 0, "pitches": [Pitch()], "durTot": 1})],
+                 "raga": Raga()})
+    assert "raga" not in ph.to_json()
