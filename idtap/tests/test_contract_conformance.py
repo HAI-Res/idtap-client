@@ -47,6 +47,15 @@ def _rel(a, b, rel):
     return abs(a - b) <= rel * max(abs(a), abs(b), 1e-12)
 
 
+def test_contract_fixtures_available():
+    """When CI sets REQUIRE_CONTRACT=1, the idtap-contract fixtures MUST be present —
+    fail loudly instead of silently skipping the parametrized conformance cases (an
+    empty parameter set is not a test failure on its own)."""
+    if os.environ.get("REQUIRE_CONTRACT") != "1":
+        pytest.skip("REQUIRE_CONTRACT not set — conformance fixtures are optional locally")
+    assert PITCH_FIXTURES, f"no idtap-contract fixtures found under {_contract_dir()}"
+
+
 # --------------------------------------------------------------------------- pitch
 PITCH_FIXTURES = _fixtures("pitch")
 
