@@ -159,7 +159,8 @@ def test_piece_conformance(path):
     got = [p.frequency
            for phrases in piece.phrase_grid
            for ph in phrases
-           for t in ph.trajectory_grid[0]
+           for string in ph.trajectory_grid   # ALL strings (polyphonic)
+           for t in string
            for p in t.pitches]
     want = fx["expected"]["allPitchFrequencies"]
     assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
