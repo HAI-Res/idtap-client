@@ -34,12 +34,13 @@ def test_default_pitch():
     assert p.octaved_sargam_letter == 'S'
     assert p.numbered_pitch == 0
     assert p.chroma == 0
+    # Canonical stripped serialization: ratios + fundamental are inherited from
+    # the raga and threaded in on load, NOT serialized per-pitch (idtap-contract
+    # PITCH-2). Frequency correctness is covered by the conformance fixtures.
     assert p.to_json() == {
         'swara': 0,
         'raised': True,
         'oct': 0,
-        'ratios': ratios,
-        'fundamental': 261.63,
         'logOffset': 0,
     }
 
