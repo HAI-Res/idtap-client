@@ -165,3 +165,29 @@ def test_piece_conformance(path):
     assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
     for g, w in zip(got, want):
         assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"
+
+
+# --------------------------------------------------------------------------- meter
+METER_FIXTURES = _fixtures("meter")
+
+
+@pytest.mark.parametrize("path", METER_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_meter_conformance(path):
+    from idtap.classes.meter import Meter
+    fx = _load(path)
+    if fx.get("scenario") == "behavioral":
+        # round-trip: expressive proportional offsets must survive to_json (METER-1)
+        m = Meter.from_json(fx["meterJson"])
+        j = m.to_json()
+        got = [ps["offsets"] for layer in j["pulseStructures"] for ps in layer]
+        want = fx["expected"]["pulseStructureOffsets"]
+        rel = fx.get("tolerance", {}).get("rel", 1e-9)
+        assert len(got) == len(want)
+        for g, w in zip(got, want):
+            assert len(g) == len(w), f"{fx['name']}: offsets length"
+            for a, b in zip(g, w):
+                assert _rel(a, b, rel), f"{fx['name']}: offset {a} != {b}"
+    else:  # structural
+        inst = fx["instance"]
+        for k in fx["expected"]["requiredKeys"]:
+            assert k in inst
