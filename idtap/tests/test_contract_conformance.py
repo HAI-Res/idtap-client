@@ -18,6 +18,7 @@ import math
 import pytest
 
 from idtap.classes.pitch import Pitch
+from idtap.classes.trajectory import Trajectory
 
 
 def _contract_dir():
@@ -76,3 +77,38 @@ def test_pitch_to_json_is_stripped():
     assert keys == {"swara", "raised", "oct", "logOffset"}, (
         f"to_json emitted {keys}; expected the stripped 4-key shape"
     )
+
+
+# --------------------------------------------------------------------------- trajectory
+TRAJECTORY_FIXTURES = _fixtures("trajectory")
+
+
+@pytest.mark.parametrize("path", TRAJECTORY_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_trajectory_conformance(path):
+    fx = _load(path)
+    ctx = fx.get("context") or {}
+    t = Trajectory.from_json(
+        fx["trajectoryJson"],
+        ratios=ctx.get("ratios"),
+        fundamental=ctx.get("fundamental"),
+    )
+    exp = fx["expected"]
+    rel = fx.get("tolerance", {}).get("rel", 1e-9)
+    got = [p.frequency for p in t.pitches]
+    assert len(got) == len(exp["pitchFrequencies"])
+    for g, w in zip(got, exp["pitchFrequencies"]):
+        assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"
+    assert t.id == exp["id"]
+    # Derived/default checks apply to the stripped form. Legacy fixtures embed
+    # real name/tags, which must be PRESERVED (backward compat), not defaulted.
+    if fx.get("scenario") == "stripped":
+        assert t.name == exp["derivedName"]   # name derived from id
+        assert t.tags == exp["tagsDefault"]   # tags default []
+
+
+def test_trajectory_to_json_strips_fields():
+    """to_json() must NOT include name / instrumentation / tags."""
+    t = Trajectory({"id": 0, "pitches": [Pitch()], "durTot": 1})
+    keys = set(t.to_json().keys())
+    for stripped in ("name", "instrumentation", "tags"):
+        assert stripped not in keys, f"to_json still emits {stripped}"
