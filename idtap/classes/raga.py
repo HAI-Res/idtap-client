@@ -627,6 +627,10 @@ class Raga:
             'fundamental': self.fundamental,
             'ratios': self.ratios,
             'tuning': self.tuning,
+            # PROP-1: serialize the ruleSet so the piece's raga is self-contained
+            # (interpretable without a DB lookup) and non-Yaman ragas round-trip.
+            # Wire key is camelCase; from_json decamelizes it back to rule_set.
+            'ruleSet': self.rule_set,
         }
 
     @staticmethod

@@ -166,6 +166,7 @@ def test_default_raga():
         'fundamental': 261.63,
         'ratios': base_ratios,
         'tuning': base_tuning,
+        'ruleSet': yaman_rule_set,  # PROP-1: ruleSet now serialized
     }
     assert r.to_json() == json_obj
 

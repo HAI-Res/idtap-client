@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import List, Optional, Dict, Union, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .phrase import Phrase
 from .trajectory import Trajectory
@@ -79,6 +79,26 @@ def durations_of_fixed_pitches(
     return pitch_durs
 
 
+def _iso_utc(dt: datetime) -> str:
+    """PROP-2: serialize a datetime as ISO-8601 UTC with an explicit 'Z'.
+    Naive datetimes are assumed to be UTC (legacy values were stored naive)."""
+    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    return dt.isoformat().replace('+00:00', 'Z')
+
+
+def _parse_utc(value) -> datetime:
+    """PROP-2: parse a wire date into a tz-aware UTC datetime. Accepts an ISO
+    string (with 'Z' or offset), a legacy Mongo {"$date": ...} wrapper, or an
+    existing datetime. Naive results are treated as UTC."""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        if isinstance(value, dict) and "$date" in value:
+            value = value["$date"]
+        dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
 class Piece:
     def __init__(self, options: Optional[dict] = None) -> None:
         opts = options or {}
@@ -143,8 +163,8 @@ class Piece:
         self.phrase_grid = grid
 
         self.title: str = opts.get("title", "untitled")
-        self.date_created: datetime = opts.get("dateCreated", datetime.now())
-        self.date_modified: datetime = opts.get("dateModified", datetime.now())
+        self.date_created: datetime = opts.get("dateCreated", datetime.now(timezone.utc))
+        self.date_modified: datetime = opts.get("dateModified", datetime.now(timezone.utc))
         self.location: str = opts.get("location", "Santa Cruz")
         self._id: Optional[str] = opts.get("_id")
         self.audio_id: Optional[str] = opts.get("audioID")
@@ -1426,8 +1446,9 @@ class Piece:
             "durArrayGrid": self.dur_array_grid,
             "meters": [m.to_json() for m in self.meters],
             "title": self.title,
-            "dateCreated": self.date_created.isoformat(),
-            "dateModified": self.date_modified.isoformat(),
+            # PROP-2: emit ISO-8601 UTC with an explicit 'Z', never naive/{$date}.
+            "dateCreated": _iso_utc(self.date_created),
+            "dateModified": _iso_utc(self.date_modified),
             "location": self.location,
             "_id": self._id,
             "audioID": self.audio_id,
@@ -1443,7 +1464,9 @@ class Piece:
             "excerptRange": self.excerpt_range,
             "adHocSectionCatGrid": self.ad_hoc_section_cat_grid,
             "assemblageDescriptors": self.assemblage_descriptors,
-            "collections": self.collections,
+            # PROP-2: `collections` is transcription-document metadata maintained only by
+            # the add/remove-to-collection endpoints (server uses $set, so omitting it is
+            # non-destructive). Including it risks clobbering server-managed membership.
         }
         # drop None values so they serialize as undefined (omitted) rather than null
         return {k: v for k, v in data.items() if v is not None}
@@ -1491,15 +1514,9 @@ class Piece:
         if "meters" in new_obj:
             new_obj["meters"] = [Meter.from_json(m) for m in new_obj["meters"]]
         if "dateCreated" in new_obj:
-            dc = new_obj["dateCreated"]
-            if isinstance(dc, dict) and "$date" in dc:
-                dc = dc["$date"]
-            new_obj["dateCreated"] = datetime.fromisoformat(str(dc).replace('Z',''))
+            new_obj["dateCreated"] = _parse_utc(new_obj["dateCreated"])
         if "dateModified" in new_obj:
-            dm = new_obj["dateModified"]
-            if isinstance(dm, dict) and "$date" in dm:
-                dm = dm["$date"]
-            new_obj["dateModified"] = datetime.fromisoformat(str(dm).replace('Z',''))
+            new_obj["dateModified"] = _parse_utc(new_obj["dateModified"])
 
         piece = Piece(new_obj)
 

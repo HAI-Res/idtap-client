@@ -81,6 +81,42 @@ def test_pitch_to_json_is_stripped():
     )
 
 
+# --------------------------------------------------------------------------- raga
+RAGA_FIXTURES = _fixtures("raga")
+
+
+def _flatten(x):
+    for e in x:
+        if isinstance(e, list):
+            yield from e
+        else:
+            yield e
+
+
+@pytest.mark.parametrize("path", RAGA_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_raga_conformance(path):
+    """PROP-1: with ruleSet serialized, Raga.from_json must reconstruct the correct
+    stratifiedRatios + fundamental for NON-Yaman ragas (Bhairav/Todi/both-ni) too —
+    it reads the serialized ruleSet rather than defaulting to Yaman."""
+    from idtap.classes.raga import Raga
+    fx = _load(path)
+    rg = Raga.from_json(fx["ragaJson"])
+    rel = fx.get("tolerance", {}).get("rel", 1e-9)
+    got = list(_flatten(rg.stratified_ratios))
+    want = list(_flatten(fx["expected"]["stratifiedRatios"]))
+    assert len(got) == len(want), f"{fx['name']}: {len(got)} ratios vs {len(want)}"
+    for g, w in zip(got, want):
+        assert _rel(g, w, rel), f"{fx['name']}: ratio {g} != {w}"
+    assert rg.fundamental == fx["expected"]["fundamental"]
+
+
+def test_raga_to_json_includes_rule_set():
+    """PROP-1: to_json must emit ruleSet so the piece's raga is self-contained."""
+    from idtap.classes.raga import Raga
+    j = Raga().to_json()
+    assert "ruleSet" in j, "Raga.to_json must serialize ruleSet (PROP-1)"
+
+
 # --------------------------------------------------------------------------- trajectory
 TRAJECTORY_FIXTURES = _fixtures("trajectory")
 
@@ -143,6 +179,18 @@ def test_phrase_conformance(path):
     assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
     for g, w in zip(got, want):
         assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"
+
+
+def test_piece_to_json_prop2():
+    """PROP-2: to_json must omit `collections` (server-managed metadata) and emit
+    ISO-8601 UTC dates ending in 'Z' (never naive, never {$date})."""
+    from idtap.classes.piece import Piece
+    j = Piece().to_json()
+    assert "collections" not in j, "to_json must not emit collections (PROP-2)"
+    for k in ("dateCreated", "dateModified"):
+        assert k in j and isinstance(j[k], str) and j[k].endswith("Z"), (
+            f"{k} must be an ISO-8601 UTC string ending in Z, got {j.get(k)!r}"
+        )
 
 
 def test_phrase_to_json_strips_raga():
