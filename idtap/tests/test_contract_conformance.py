@@ -168,6 +168,19 @@ def test_piece_conformance(path):
         assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"
 
 
+# --------------------------------------------------------------------------- idempotence (C)
+@pytest.mark.parametrize("path", PIECE_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_piece_roundtrip_idempotence(path):
+    """to_json -> from_json -> to_json must be STABLE. The first save strips
+    fields, so cycle-1 vs cycle-2 output must be byte-identical (idempotent).
+    Volatile fields (generated timestamps) are populated on first load and then
+    preserved, so comparing the two post-first-roundtrip outputs is deterministic."""
+    fx = _load(path)
+    j1 = Piece.from_json(fx["pieceJson"]).to_json()
+    j2 = Piece.from_json(j1).to_json()
+    assert j1 == j2, f"{fx['name']}: serialization not idempotent"
+
+
 # --------------------------------------------------------------------------- meter
 METER_FIXTURES = _fixtures("meter")
 
