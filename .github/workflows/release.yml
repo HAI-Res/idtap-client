@@ -7,6 +7,12 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # FROZEN during the MIT-infra migration: this job bumps the version, publishes to the
+    # real PyPI, and pushes a tag to main. It is gated OFF until cutover so merges to main
+    # do NOT cut a new PyPI release. To re-enable at switchover, set the repository variable
+    # ENABLE_PYPI_RELEASE = 'true' (Settings → Secrets and variables → Actions → Variables).
+    # No logic was removed — only gated.
+    if: ${{ vars.ENABLE_PYPI_RELEASE == 'true' }}
     concurrency: release
     permissions:
       id-token: write    # OIDC for PyPI trusted publishing

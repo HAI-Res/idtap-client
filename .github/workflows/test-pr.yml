@@ -65,16 +65,19 @@ jobs:
           echo "Testing version bump script..."
           python scripts/bump_version.py --help 2>/dev/null || echo "Version script ready"
           
+      # FROZEN during the MIT-infra migration: TestPyPI upload is gated OFF (it still
+      # publishes to a PyPI index). Re-enable at cutover by setting the repository variable
+      # ENABLE_TESTPYPI_PUBLISH = 'true'. Tests + build above still run on every PR.
       - name: Test upload to TestPyPI
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ENABLE_TESTPYPI_PUBLISH == 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
           password: ${{ secrets.TESTPYPI_API_TOKEN }}
-          
+
       - name: Comment PR with TestPyPI link
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ENABLE_TESTPYPI_PUBLISH == 'true' }}
         uses: actions/github-script@v7
         with:
           script: |
