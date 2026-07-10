@@ -1066,6 +1066,50 @@ class Piece:
         return durations_of_fixed_pitches(trajs=self.all_trajectories(inst), output_type=output_type, count_type="proportional")
 
     # ------------------------------------------------------------------
+    def ensure_string_synchronization(self) -> None:
+        """Mirror of the TS Piece.ensureStringSynchronization (STRING-SYNC).
+
+        For Sitar/Sarangi tracks, guarantee a second string (trajectory_grid[1])
+        exists holding a single silent (id-12) trajectory spanning the phrase whenever
+        it has no non-silent content — keeping the polyphonic 2nd string temporally
+        aligned. This makes a Python load->save round-trip structurally identical to
+        the TS client. Called from from_json (the load path).
+
+        Idempotent by design: an existing silent trajectory is PRESERVED (its uniqueId
+        kept), and a fresh one is synthesized only when the second string is empty — so
+        to_json -> from_json -> to_json is byte-stable.
+        """
+        for track_idx, track_phrases in enumerate(self.phrase_grid):
+            if track_idx >= len(self.instrumentation):
+                continue
+            instrument = self.instrumentation[track_idx]
+            inst_val = getattr(instrument, 'value', instrument)
+            if inst_val not in (Instrument.Sitar.value, Instrument.Sarangi.value):
+                continue
+            for phrase in track_phrases:
+                while len(phrase.trajectory_grid) < 2:
+                    phrase.trajectory_grid.append([])
+                second = phrase.trajectory_grid[1]
+                has_non_silent = any(t.id != 12 for t in second)
+                if second and has_non_silent:
+                    continue
+                # Empty or all-silent: collapse to a single silent trajectory. Reuse the
+                # first existing silent traj (preserve its uniqueId) for idempotence.
+                if second:
+                    keep = second[0]
+                    keep.dur_tot = phrase.dur_tot
+                    keep.start_time = 0
+                    keep.fund_id12 = self.raga.fundamental
+                else:
+                    keep = Trajectory({
+                        'id': 12,
+                        'dur_tot': phrase.dur_tot,
+                        'fund_id12': self.raga.fundamental,
+                        'start_time': 0,
+                    })
+                phrase.trajectory_grid[1] = [keep]
+                phrase.reset()
+
     def chikari_freqs(self, inst_idx: int = 0) -> List[float]:
         """Return 4 chikari frequencies derived from the raga.
 
@@ -1546,5 +1590,8 @@ class Piece:
 
         piece.dur_array_from_phrases()
         piece.section_starts_grid = [sorted(set(arr)) for arr in piece.section_starts_grid]
+
+        # STRING-SYNC: keep the polyphonic 2nd string aligned, matching the TS client.
+        piece.ensure_string_synchronization()
 
         return piece
