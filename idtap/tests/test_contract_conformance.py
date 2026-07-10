@@ -20,6 +20,7 @@ import pytest
 from idtap.classes.pitch import Pitch
 from idtap.classes.trajectory import Trajectory
 from idtap.classes.phrase import Phrase
+from idtap.classes.piece import Piece
 
 
 def _contract_dir():
@@ -142,3 +143,25 @@ def test_phrase_to_json_strips_raga():
     ph = Phrase({"trajectories": [Trajectory({"id": 0, "pitches": [Pitch()], "durTot": 1})],
                  "raga": Raga()})
     assert "raga" not in ph.to_json()
+
+
+# --------------------------------------------------------------------------- piece
+PIECE_FIXTURES = _fixtures("piece")
+
+
+@pytest.mark.parametrize("path", PIECE_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_piece_conformance(path):
+    fx = _load(path)
+    # Piece is the ROOT: from_json extracts (ratios, fundamental) from its raga
+    # and threads them down the whole chain. No context arg.
+    piece = Piece.from_json(fx["pieceJson"])
+    rel = fx.get("tolerance", {}).get("rel", 1e-9)
+    got = [p.frequency
+           for phrases in piece.phrase_grid
+           for ph in phrases
+           for t in ph.trajectory_grid[0]
+           for p in t.pitches]
+    want = fx["expected"]["allPitchFrequencies"]
+    assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
+    for g, w in zip(got, want):
+        assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"

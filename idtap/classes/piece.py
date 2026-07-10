@@ -1451,12 +1451,19 @@ class Piece:
     @staticmethod
     def from_json(obj: Dict[str, Any]) -> "Piece":
         new_obj = dict(obj)
+        raga = None
         if "raga" in new_obj:
-            new_obj["raga"] = Raga.from_json(new_obj["raga"])
+            raga = Raga.from_json(new_obj["raga"])
+            new_obj["raga"] = raga
+        # ROOT of the context chain: extract (ratios, fundamental) from the raga
+        # and thread down to every phrase -> trajectory -> pitch. Without this,
+        # stripped pieces load at the default 261.63 Hz (idtap-contract PIECE-1).
+        ratios = raga.stratified_ratios if raga else None
+        fundamental = raga.fundamental if raga else None
         if "phraseGrid" in new_obj:
             pg = []
             for row in new_obj["phraseGrid"]:
-                phrase_row = [Phrase.from_json(p) for p in row]
+                phrase_row = [Phrase.from_json(p, ratios=ratios, fundamental=fundamental) for p in row]
                 pg.append(phrase_row)
             # reconstruct groups so they reference existing trajectories
             for row in pg:
