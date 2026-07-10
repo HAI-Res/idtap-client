@@ -106,6 +106,14 @@ def test_trajectory_conformance(path):
     if fx.get("scenario") == "stripped":
         assert t.name == exp["derivedName"]   # name derived from id
         assert t.tags == exp["tagsDefault"]   # tags default []
+    # E: sub-objects (articulations / automation) must round-trip when present
+    tj = fx["trajectoryJson"]
+    for k, art in (tj.get("articulations") or {}).items():
+        assert k in t.articulations, f"articulation key {k} lost"
+        assert t.articulations[k].name == art["name"]
+    if tj.get("automation"):
+        assert t.automation is not None, "automation lost"
+        assert len(t.automation.values) == len(tj["automation"]["values"])
 
 
 def test_trajectory_to_json_strips_fields():
@@ -166,6 +174,9 @@ def test_piece_conformance(path):
     assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
     for g, w in zip(got, want):
         assert _rel(g, w, rel), f"{fx['name']}: pitch freq {g} != {w}"
+    # F: title (incl. Unicode) must round-trip unchanged
+    if fx["pieceJson"].get("title") is not None:
+        assert piece.title == fx["pieceJson"]["title"]
 
 
 # --------------------------------------------------------------------------- idempotence (C)
