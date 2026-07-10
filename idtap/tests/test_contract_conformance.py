@@ -164,11 +164,14 @@ def test_piece_conformance(path):
     # and threads them down the whole chain. No context arg.
     piece = Piece.from_json(fx["pieceJson"])
     rel = fx.get("tolerance", {}).get("rel", 1e-9)
+    # Melodic pitches only — exclude id-12 (Silent) trajectories so the frequency
+    # check is robust to string-sync (TS synthesizes a silent 2nd string; Python
+    # does not — see STRING-SYNC in DIVERGENCES.md).
     got = [p.frequency
            for phrases in piece.phrase_grid
            for ph in phrases
            for string in ph.trajectory_grid   # ALL strings (polyphonic)
-           for t in string
+           for t in string if t.id != 12
            for p in t.pitches]
     want = fx["expected"]["allPitchFrequencies"]
     assert len(got) == len(want), f"{fx['name']}: {len(got)} pitches vs {len(want)}"
