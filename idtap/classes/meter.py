@@ -259,7 +259,14 @@ class PulseStructure:
             'primary': self.primary,
             'segmentedMeterIdx': self.segmented_meter_idx,
             'meterId': self.meter_id,
-            'offsets': [0.0] * self.size,
+            # Proportional offset of each pulse from its grid position, derived
+            # from the (preserved) pulse real_times — matches TS proportionalOffsets.
+            # Previously hardcoded to zeros, losing expressive timing (idtap-contract
+            # METER-1). offset[i] = (realTime[i] - startTime - i*pulseDur) / pulseDur.
+            'offsets': [
+                (self.pulses[i].real_time - self.start_time - i * self.pulse_dur) / self.pulse_dur
+                for i in range(self.size)
+            ] if self.pulse_dur else [0.0] * self.size,
         }
 
     @staticmethod

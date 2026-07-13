@@ -103,4 +103,12 @@ class Chikari:
         if pitches_data:
             pitches = [Pitch.from_json(p) for p in pitches_data]
             opts['pitches'] = pitches
+        else:
+            # PROP-3: the canonical form ({fundamental, uniqueId}) carries no pitches.
+            # Do NOT synthesize 12-TET default pitches here — that produced a footgun
+            # where a Python consumer reading chikari.pitches[i].frequency got 12-TET
+            # for a non-12-TET raga. Drone tuning is owned by the raga
+            # (Piece.chikari_freqs -> raga.chikari_pitches); leave pitches empty on
+            # canonical load, matching the TS client's behavior.
+            opts['pitches'] = []
         return Chikari(opts)  # type: ignore[arg-type]

@@ -199,12 +199,15 @@ class Pitch:
     
     #method
     def to_json(self):
-        return { # this should still be camelCase
+        # Canonical stripped form (camelCase). ratios + fundamental are NOT
+        # serialized — they are inherited from the raga and threaded in on load
+        # via from_json(ratios=, fundamental=). See idtap-contract PITCH-1/2.
+        return {
             'swara': self.swara,
             'raised': self.raised,
             'oct': self.oct,
             'logOffset': self.log_offset,
-        } 
+        }
 
     #method
     def set_oct(self, new_oct):
@@ -390,6 +393,9 @@ class Pitch:
 
     @classmethod
     def from_json(cls, obj: dict, ratios=None, fundamental=None) -> "Pitch":
+        # Thread raga context in: passed-in ratios/fundamental take precedence;
+        # embedded (legacy) values in obj are the fallback. See idtap-contract
+        # PITCH-1 (fixes the Yaman bug: stripped pitches load at 261.63 Hz).
         opts = dict(obj)
         if ratios is not None:
             opts['ratios'] = ratios

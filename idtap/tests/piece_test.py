@@ -23,7 +23,7 @@ from idtap.classes.chikari import Chikari
 from idtap.classes.meter import Meter
 from idtap.classes.assemblage import Assemblage
 from idtap.enums import Instrument
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # Helper builders
@@ -198,8 +198,10 @@ def test_optional_fields_round_trip():
     piece = Piece(opts)
     copy = Piece.from_json(piece.to_json())
     assert copy.title == opts['title']
-    assert copy.date_created.isoformat() == opts['dateCreated'].isoformat()
-    assert copy.date_modified.isoformat() == opts['dateModified'].isoformat()
+    # PROP-2: dates round-trip as tz-aware UTC (naive input is assumed UTC), so the
+    # instant is preserved even though the returned datetime now carries tzinfo.
+    assert copy.date_created == opts['dateCreated'].replace(tzinfo=timezone.utc)
+    assert copy.date_modified == opts['dateModified'].replace(tzinfo=timezone.utc)
     assert copy.location == opts['location']
     assert copy._id == opts['_id']
     assert copy.audio_id == opts['audioID']

@@ -359,13 +359,11 @@ class Phrase:
         if not self.raga:
             return
         ratios = self.raga.stratified_ratios
-        fundamental = self.raga.fundamental
         for traj in self.trajectories:
             new_pitches = []
             for p in traj.pitches:
                 opts = p.to_json()
                 opts['ratios'] = ratios
-                opts['fundamental'] = fundamental
                 new_pitches.append(Pitch(opts))
             traj.pitches = new_pitches
 
@@ -547,10 +545,11 @@ class Phrase:
             'durTot': self.dur_tot,
             'durArray': self.dur_array,
             'chikaris': {k: c.to_json() for k, c in self.chikaris.items()},
+            # raga: stripped — inherited from the piece (idtap-contract PHRASE-1)
             'startTime': self.start_time,
             'trajectoryGrid': [[t.to_json() for t in row] for row in self.trajectory_grid],
-            'instrumentation': [i.value if hasattr(i, 'value') else i for i in self.instrumentation],
-            'groupsGrid': [[g.to_json() for g in row] for row in self.groups_grid],
+            'instrumentation': self.instrumentation,
+            'groupsGrid': self.groups_grid,
             'categorizationGrid': self.categorization_grid,
             'uniqueId': self.unique_id,
             'adHocCategorizationGrid': self.ad_hoc_categorization_grid,
@@ -560,16 +559,14 @@ class Phrase:
     @staticmethod
     def from_json(obj: Dict[str, Any], ratios=None, fundamental=None) -> 'Phrase':
         opts = selective_decamelize(obj)
-
-        # If phrase has its own raga (legacy data), use it as fallback context
+        # Thread raga context to trajectories; if none passed, fall back to the
+        # phrase's own embedded raga (legacy data) — idtap-contract PHRASE-2.
         phrase_raga = opts.get('raga')
         if phrase_raga is not None and not isinstance(phrase_raga, Raga):
             phrase_raga = Raga.from_json(phrase_raga)
             opts['raga'] = phrase_raga
-
         r = ratios if ratios is not None else (phrase_raga.stratified_ratios if phrase_raga else None)
         f = fundamental if fundamental is not None else (phrase_raga.fundamental if phrase_raga else None)
-
         trajectory_grid = opts.get('trajectory_grid')
         if trajectory_grid is not None:
             tg = []
@@ -594,6 +591,7 @@ class Phrase:
                     new_obj[str(k)] = Chikari.from_json(v)
                 new_grid.append(new_obj)
             opts['chikari_grid'] = new_grid
+        # (raga already parsed above and threaded as context)
         return Phrase(opts)
 
     def to_note_view_phrase(self) -> 'NoteViewPhrase':

@@ -42,7 +42,9 @@ def test_chikari_from_json_old_format():
 
 
 def test_chikari_from_json_new_format():
-    """New format: from_json() without pitches uses defaults."""
+    """New format: from_json() without pitches leaves pitches EMPTY (PROP-3).
+    Drone tuning is owned by the raga (Piece.chikari_freqs -> raga.chikari_pitches),
+    so the canonical form no longer synthesizes 12-TET default pitches. Matches TS."""
     new_json = {
         'fundamental': 261.63,
         'uniqueId': 'test-id-456',
@@ -50,4 +52,4 @@ def test_chikari_from_json_new_format():
     c = Chikari.from_json(new_json)
     assert c.fundamental == 261.63
     assert c.unique_id == 'test-id-456'
-    assert len(c.pitches) == 4  # default pitches
+    assert len(c.pitches) == 0  # PROP-3: no 12-TET default footgun on canonical load

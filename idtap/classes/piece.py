@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import List, Optional, Dict, Union, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .phrase import Phrase
 from .trajectory import Trajectory
@@ -79,6 +79,26 @@ def durations_of_fixed_pitches(
     return pitch_durs
 
 
+def _iso_utc(dt: datetime) -> str:
+    """PROP-2: serialize a datetime as ISO-8601 UTC with an explicit 'Z'.
+    Naive datetimes are assumed to be UTC (legacy values were stored naive)."""
+    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    return dt.isoformat().replace('+00:00', 'Z')
+
+
+def _parse_utc(value) -> datetime:
+    """PROP-2: parse a wire date into a tz-aware UTC datetime. Accepts an ISO
+    string (with 'Z' or offset), a legacy Mongo {"$date": ...} wrapper, or an
+    existing datetime. Naive results are treated as UTC."""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        if isinstance(value, dict) and "$date" in value:
+            value = value["$date"]
+        dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
 class Piece:
     def __init__(self, options: Optional[dict] = None) -> None:
         opts = options or {}
@@ -143,8 +163,8 @@ class Piece:
         self.phrase_grid = grid
 
         self.title: str = opts.get("title", "untitled")
-        self.date_created: datetime = opts.get("dateCreated", datetime.now())
-        self.date_modified: datetime = opts.get("dateModified", datetime.now())
+        self.date_created: datetime = opts.get("dateCreated", datetime.now(timezone.utc))
+        self.date_modified: datetime = opts.get("dateModified", datetime.now(timezone.utc))
         self.location: str = opts.get("location", "Santa Cruz")
         self._id: Optional[str] = opts.get("_id")
         self.audio_id: Optional[str] = opts.get("audioID")
@@ -371,8 +391,8 @@ class Piece:
         if 'collections' in opts and opts['collections'] is not None:
             if not isinstance(opts['collections'], list):
                 raise TypeError(f"Parameter 'collections' must be a list, got {type(opts['collections']).__name__}")
-            if not all(isinstance(item, str) or item is None for item in opts['collections']):
-                raise TypeError("All items in 'collections' must be strings or None")
+            if not all(isinstance(item, str) for item in opts['collections']):
+                raise TypeError("All items in 'collections' must be strings")
 
         # Validate trackTitles
         if 'trackTitles' in opts and opts['trackTitles'] is not None:
@@ -1046,6 +1066,50 @@ class Piece:
         return durations_of_fixed_pitches(trajs=self.all_trajectories(inst), output_type=output_type, count_type="proportional")
 
     # ------------------------------------------------------------------
+    def ensure_string_synchronization(self) -> None:
+        """Mirror of the TS Piece.ensureStringSynchronization (STRING-SYNC).
+
+        For Sitar/Sarangi tracks, guarantee a second string (trajectory_grid[1])
+        exists holding a single silent (id-12) trajectory spanning the phrase whenever
+        it has no non-silent content — keeping the polyphonic 2nd string temporally
+        aligned. This makes a Python load->save round-trip structurally identical to
+        the TS client. Called from from_json (the load path).
+
+        Idempotent by design: an existing silent trajectory is PRESERVED (its uniqueId
+        kept), and a fresh one is synthesized only when the second string is empty — so
+        to_json -> from_json -> to_json is byte-stable.
+        """
+        for track_idx, track_phrases in enumerate(self.phrase_grid):
+            if track_idx >= len(self.instrumentation):
+                continue
+            instrument = self.instrumentation[track_idx]
+            inst_val = getattr(instrument, 'value', instrument)
+            if inst_val not in (Instrument.Sitar.value, Instrument.Sarangi.value):
+                continue
+            for phrase in track_phrases:
+                while len(phrase.trajectory_grid) < 2:
+                    phrase.trajectory_grid.append([])
+                second = phrase.trajectory_grid[1]
+                has_non_silent = any(t.id != 12 for t in second)
+                if second and has_non_silent:
+                    continue
+                # Empty or all-silent: collapse to a single silent trajectory. Reuse the
+                # first existing silent traj (preserve its uniqueId) for idempotence.
+                if second:
+                    keep = second[0]
+                    keep.dur_tot = phrase.dur_tot
+                    keep.start_time = 0
+                    keep.fund_id12 = self.raga.fundamental
+                else:
+                    keep = Trajectory({
+                        'id': 12,
+                        'dur_tot': phrase.dur_tot,
+                        'fund_id12': self.raga.fundamental,
+                        'start_time': 0,
+                    })
+                phrase.trajectory_grid[1] = [keep]
+                phrase.reset()
+
     def chikari_freqs(self, inst_idx: int = 0) -> List[float]:
         """Return 4 chikari frequencies derived from the raga.
 
@@ -1426,8 +1490,9 @@ class Piece:
             "durArrayGrid": self.dur_array_grid,
             "meters": [m.to_json() for m in self.meters],
             "title": self.title,
-            "dateCreated": self.date_created.isoformat(),
-            "dateModified": self.date_modified.isoformat(),
+            # PROP-2: emit ISO-8601 UTC with an explicit 'Z', never naive/{$date}.
+            "dateCreated": _iso_utc(self.date_created),
+            "dateModified": _iso_utc(self.date_modified),
             "location": self.location,
             "_id": self._id,
             "audioID": self.audio_id,
@@ -1443,7 +1508,9 @@ class Piece:
             "excerptRange": self.excerpt_range,
             "adHocSectionCatGrid": self.ad_hoc_section_cat_grid,
             "assemblageDescriptors": self.assemblage_descriptors,
-            "collections": self.collections,
+            # PROP-2: `collections` is transcription-document metadata maintained only by
+            # the add/remove-to-collection endpoints (server uses $set, so omitting it is
+            # non-destructive). Including it risks clobbering server-managed membership.
         }
         # drop None values so they serialize as undefined (omitted) rather than null
         return {k: v for k, v in data.items() if v is not None}
@@ -1455,11 +1522,11 @@ class Piece:
         if "raga" in new_obj:
             raga = Raga.from_json(new_obj["raga"])
             new_obj["raga"] = raga
-
-        # Extract raga context for threading down to pitches
+        # ROOT of the context chain: extract (ratios, fundamental) from the raga
+        # and thread down to every phrase -> trajectory -> pitch. Without this,
+        # stripped pieces load at the default 261.63 Hz (idtap-contract PIECE-1).
         ratios = raga.stratified_ratios if raga else None
         fundamental = raga.fundamental if raga else None
-
         if "phraseGrid" in new_obj:
             pg = []
             for row in new_obj["phraseGrid"]:
@@ -1472,8 +1539,6 @@ class Piece:
                     for g_list in phrase.groups_grid:
                         rebuilt: List[Group] = []
                         for g in g_list:
-                            if isinstance(g, str):
-                                continue  # skip bare ID strings
                             data = g if isinstance(g, dict) else g.to_json()
                             trajs = []
                             for t in data.get("trajectories", []):
@@ -1493,29 +1558,9 @@ class Piece:
         if "meters" in new_obj:
             new_obj["meters"] = [Meter.from_json(m) for m in new_obj["meters"]]
         if "dateCreated" in new_obj:
-            dc = new_obj["dateCreated"]
-            if isinstance(dc, dict) and "$date" in dc:
-                dc = dc["$date"]
-            new_obj["dateCreated"] = datetime.fromisoformat(str(dc).replace('Z',''))
+            new_obj["dateCreated"] = _parse_utc(new_obj["dateCreated"])
         if "dateModified" in new_obj:
-            dm = new_obj["dateModified"]
-            if isinstance(dm, dict) and "$date" in dm:
-                dm = dm["$date"]
-            new_obj["dateModified"] = datetime.fromisoformat(str(dm).replace('Z',''))
-
-        # Strip keys not recognized by the constructor (e.g. server-only
-        # fields like 'userId' that are not part of the data model).
-        allowed = {
-            'raga', 'instrumentation', 'phraseGrid', 'phrases', 'title',
-            'dateCreated', 'dateModified', 'location', '_id', 'audioID',
-            'audio_DB_ID', 'userID', 'name', 'family_name', 'given_name',
-            'permissions', 'soloist', 'soloInstrument', 'explicitPermissions',
-            'meters', 'sectionStartsGrid', 'sectionStarts', 'sectionCatGrid',
-            'sectionCategorization', 'adHocSectionCatGrid', 'excerptRange',
-            'assemblageDescriptors', 'collections', 'durTot', 'durArrayGrid',
-            'durArray', 'trackTitles',
-        }
-        new_obj = {k: v for k, v in new_obj.items() if k in allowed}
+            new_obj["dateModified"] = _parse_utc(new_obj["dateModified"])
 
         piece = Piece(new_obj)
 
@@ -1545,5 +1590,8 @@ class Piece:
 
         piece.dur_array_from_phrases()
         piece.section_starts_grid = [sorted(set(arr)) for arr in piece.section_starts_grid]
+
+        # STRING-SYNC: keep the polyphonic 2nd string aligned, matching the TS client.
+        piece.ensure_string_synchronization()
 
         return piece

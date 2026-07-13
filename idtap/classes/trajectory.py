@@ -70,7 +70,7 @@ class Trajectory:
         if vib_obj is None:
             self.vib_obj: VibObjType = {
                 'periods': 8,
-                'vert_offset': 0,
+                'vert_offset': 0.0,  # float (matches VibObjType + _normalize_vib_obj default) so serialization is idempotent from cycle 1
                 'init_up': True,
                 'extent': 0.05,
             }
@@ -911,8 +911,10 @@ class Trajectory:
             'articulations': {k: a.to_json() for k, a in self.articulations.items()},
             'startTime': self.start_time,
             'num': self.num,
+            # name: stripped — derived from id on load (idtap-contract TRAJ-1)
             'fundID12': self.fund_id12,
             'vibObj': self.vib_obj,
+            # instrumentation: stripped — inherited from the piece (TRAJ-1)
             'vowel': self.vowel,
             'startConsonant': self.start_consonant,
             'startConsonantHindi': self.start_consonant_hindi,
@@ -925,12 +927,14 @@ class Trajectory:
             'groupId': self.group_id,
             'automation': self.automation.to_json() if self.automation else None,
             'uniqueId': self.unique_id,
+            # tags: stripped — defaults to [] on load (idtap-contract TRAJ-1)
         }
         # drop None values so they serialize as undefined (omitted) rather than null
         return {k: v for k, v in data.items() if v is not None}
 
     @staticmethod
     def from_json(obj: Dict, ratios=None, fundamental=None) -> 'Trajectory':
+        # Thread raga context down to each pitch (idtap-contract TRAJ-2).
         opts = humps.decamelize(obj)
         pitches = [Pitch.from_json(p, ratios=ratios, fundamental=fundamental)
                    for p in opts.get('pitches', [])]
