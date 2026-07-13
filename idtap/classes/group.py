@@ -106,11 +106,12 @@ class Group:
 
     def to_json(self) -> Dict:
         return {
-            'trajectories': self.trajectories,
+            'trajectories': [t.to_json() if hasattr(t, 'to_json') else t for t in self.trajectories],
             'id': self.id,
         }
 
     @staticmethod
     def from_json(obj: Dict) -> 'Group':
-        trajs = obj.get('trajectories', [])
+        trajs = [t if isinstance(t, Trajectory) else Trajectory.from_json(t)
+                 for t in obj.get('trajectories', [])]
         return Group({'trajectories': trajs, 'id': obj.get('id')})

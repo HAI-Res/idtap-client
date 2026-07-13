@@ -126,6 +126,15 @@ class SwaraClient:
             return response.json()
         return response.content
 
+    def _delete_json(self, endpoint: str, payload: Dict[str, Any]) -> Any:
+        url = self.base_url + endpoint
+        headers = self._auth_headers()
+        response = requests.delete(url, json=payload, headers=headers, timeout=1800)
+        response.raise_for_status()
+        if response.content:
+            return response.json()
+        return None
+
     # ---- API methods ----
     def get_piece(self, piece_id: str, fetch_rule_set: bool = True) -> Any:
         """Return transcription JSON for the given id.
@@ -181,6 +190,76 @@ class SwaraClient:
         payload = dict(piece)
         payload["userID"] = self.user_id
         return self._post_json("insertNewTranscription", payload)
+
+    def clone_transcription(
+        self,
+        piece_id: str,
+        title: Optional[str] = None,
+        explicit_permissions: Optional[Dict[str, Any]] = None,
+        soloist: Optional[str] = None,
+        solo_instrument: Optional[str] = None,
+    ) -> Any:
+        """Clone a transcription, creating a new copy owned by the current user.
+
+        The server copies all transcription data (phrases, trajectories, pitches,
+        raga, audio association, etc.) and assigns a new ID, owner, and timestamps.
+
+        Args:
+            piece_id: The ID of the transcription to clone.
+            title: Title for the cloned transcription. Defaults to server behavior.
+            explicit_permissions: Permission object with 'edit', 'view' (user ID
+                lists) and 'publicView' (bool). Defaults to private.
+            soloist: Soloist name for the clone.
+            solo_instrument: Solo instrument for the clone.
+
+        Returns:
+            Server response with ``insertedId`` of the new transcription.
+        """
+        if not self.user_id:
+            raise RuntimeError("Not authenticated: cannot clone transcription")
+        payload: Dict[str, Any] = {
+            "id": piece_id,
+            "newOwner": self.user_id,
+        }
+        if title is not None:
+            payload["title"] = title
+        if self.user:
+            payload["name"] = self.user.get("name", "")
+            payload["family_name"] = self.user.get("family_name", "")
+            payload["given_name"] = self.user.get("given_name", "")
+        if explicit_permissions is not None:
+            payload["explicitPermissions"] = explicit_permissions
+        else:
+            payload["explicitPermissions"] = {
+                "edit": [],
+                "view": [],
+                "publicView": False,
+            }
+        if soloist is not None:
+            payload["soloist"] = soloist
+        if solo_instrument is not None:
+            payload["soloInstrument"] = solo_instrument
+        return self._post_json("cloneTranscription", payload)
+
+    def delete_transcription(self, piece_id: str) -> Any:
+        """Delete a transcription from the server.
+
+        Removes the transcription document and the reference from the user's
+        transcriptions array.
+
+        Args:
+            piece_id: The ID of the transcription to delete.
+
+        Returns:
+            Server response with ``deletedCount``.
+        """
+        if not self.user_id:
+            raise RuntimeError("Not authenticated: cannot delete transcription")
+        payload = {
+            "_id": piece_id,
+            "userID": self.user_id,
+        }
+        return self._delete_json("oneTranscription", payload)
 
     def _prompt_for_waiver_if_needed(self) -> None:
         """Interactively prompt user to agree to waiver if not already agreed."""
