@@ -70,7 +70,7 @@ class Trajectory:
         if vib_obj is None:
             self.vib_obj: VibObjType = {
                 'periods': 8,
-                'vert_offset': 0,
+                'vert_offset': 0.0,  # float (matches VibObjType + _normalize_vib_obj default) so serialization is idempotent from cycle 1
                 'init_up': True,
                 'extent': 0.05,
             }
