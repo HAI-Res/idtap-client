@@ -12,7 +12,7 @@ import os
 
 from idtap.classes.piece import Piece
 
-from .auth import login_google, load_token
+from .auth import login_google, load_token, refresh_access_token
 from .secure_storage import SecureTokenStorage
 from .query import Query
 from .query_types import (
@@ -42,6 +42,7 @@ class SwaraClient:
         self.auto_login = auto_login
         self.token: Optional[str] = None
         self.user: Optional[Dict[str, Any]] = None
+        self._token_data: Optional[Dict[str, Any]] = None
         self.load_token()
         
         if self.token is None and self.auto_login:
@@ -68,22 +69,35 @@ class SwaraClient:
             data = load_token(storage=self.secure_storage, token_path=legacy_path)
             
             if data:
-                # Check if tokens are expired and need refresh
+                # If tokens are expired, try to renew them with the stored
+                # refresh token before falling back to a full re-login.
                 if self.secure_storage.is_token_expired(data):
-                    print("⚠️  Stored tokens are expired. Please re-authenticate.")
-                    # Clear expired tokens
-                    self.secure_storage.clear_tokens()
-                    self.token = None
-                    self.user = None
-                    return
-                
+                    refreshed = refresh_access_token(
+                        base_url=self.base_url,
+                        storage=self.secure_storage,
+                        tokens=data,
+                    )
+                    if refreshed is not None:
+                        data = refreshed
+                    else:
+                        print("⚠️  Stored tokens are expired. Please re-authenticate.")
+                        # Clear expired tokens
+                        self.secure_storage.clear_tokens()
+                        self._token_data = None
+                        self.token = None
+                        self.user = None
+                        return
+
+                self._token_data = data
                 self.token = data.get("id_token") or data.get("token")
                 self.user = data.get("profile") or data.get("user")
             else:
+                self._token_data = None
                 self.token = None
                 self.user = None
         except Exception as e:
             print(f"Failed to load tokens: {e}")
+            self._token_data = None
             self.token = None
             self.user = None
 
@@ -107,30 +121,55 @@ class SwaraClient:
             return {"Authorization": f"Bearer {self.token}"}
         return {}
 
-    def _post_json(self, endpoint: str, payload: Dict[str, Any]) -> Any:
+    def _try_refresh(self) -> bool:
+        """Renew the id_token via the stored refresh token. Returns True on success."""
+        refreshed = refresh_access_token(
+            base_url=self.base_url,
+            storage=self.secure_storage,
+            tokens=self._token_data,
+        )
+        if refreshed is None:
+            return False
+        self._token_data = refreshed
+        self.token = refreshed.get("id_token") or refreshed.get("token")
+        if refreshed.get("profile"):
+            self.user = refreshed["profile"]
+        return True
+
+    def _refresh_if_needed(self) -> None:
+        """Proactively refresh before a request if the stored token has expired."""
+        if self.token and self._token_data and self.secure_storage.is_token_expired(self._token_data):
+            self._try_refresh()
+
+    def _request(self, method: str, endpoint: str, **kwargs: Any) -> requests.Response:
+        """Send an authenticated request, refreshing the token and retrying once on 401."""
+        self._refresh_if_needed()
         url = self.base_url + endpoint
-        headers = self._auth_headers()
-        response = requests.post(url, json=payload, headers=headers, timeout=1800)  # 30 minutes
+        response = requests.request(
+            method, url, headers=self._auth_headers(), timeout=1800, **kwargs
+        )
+        if response.status_code == 401 and self._try_refresh():
+            response = requests.request(
+                method, url, headers=self._auth_headers(), timeout=1800, **kwargs
+            )
         response.raise_for_status()
+        return response
+
+    def _post_json(self, endpoint: str, payload: Dict[str, Any]) -> Any:
+        response = self._request("post", endpoint, json=payload)
         if response.content:
             return response.json()
         return None
 
     def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = self.base_url + endpoint
-        headers = self._auth_headers()
-        response = requests.get(url, params=params, headers=headers, timeout=1800)  # 30 minutes
-        response.raise_for_status()
+        response = self._request("get", endpoint, params=params)
         ctype = response.headers.get("Content-Type", "")
         if ctype.startswith("application/json"):
             return response.json()
         return response.content
 
     def _delete_json(self, endpoint: str, payload: Dict[str, Any]) -> Any:
-        url = self.base_url + endpoint
-        headers = self._auth_headers()
-        response = requests.delete(url, json=payload, headers=headers, timeout=1800)
-        response.raise_for_status()
+        response = self._request("delete", endpoint, json=payload)
         if response.content:
             return response.json()
         return None
@@ -442,6 +481,9 @@ class SwaraClient:
         except ValueError as e:
             raise ValueError(f"Metadata validation failed: {e}")
         
+        # Refresh up front: the streaming multipart body can't be replayed on a 401.
+        self._refresh_if_needed()
+
         # Prepare form data
         try:
             # Prepare data fields
