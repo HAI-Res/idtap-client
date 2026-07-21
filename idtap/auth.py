@@ -151,6 +151,57 @@ def login_google(
     return result.get("profile", {})
 
 
+def refresh_access_token(
+    base_url: str = "https://swara.studio/",
+    storage: Optional[SecureTokenStorage] = None,
+    tokens: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Renew the stored id_token using the saved refresh token.
+
+    Posts ``grant_type=refresh_token`` to the server's ``/oauth/token``
+    endpoint and stores the updated tokens. Returns the updated token dict,
+    or None if refresh is not possible (no refresh token, server doesn't
+    support the grant, or the refresh token was revoked) — callers should
+    fall back to the full browser login in that case.
+    """
+    if storage is None:
+        storage = SecureTokenStorage()
+    if tokens is None:
+        tokens = storage.load_tokens()
+
+    refresh_token_value = (tokens or {}).get("refresh_token")
+    if not refresh_token_value:
+        return None
+
+    try:
+        response = requests.post(
+            f"{base_url.rstrip('/')}/oauth/token",
+            json={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token_value,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        result = response.json()
+    except Exception:
+        return None
+
+    if not result.get("id_token"):
+        return None
+
+    updated = dict(tokens or {})
+    updated["id_token"] = result["id_token"]
+    if result.get("access_token"):
+        updated["access_token"] = result["access_token"]
+    updated["refresh_token"] = result.get("refresh_token") or refresh_token_value
+    if result.get("profile"):
+        updated["profile"] = result["profile"]
+
+    storage.store_tokens(updated)
+    return updated
+
+
 def load_token(storage: Optional[SecureTokenStorage] = None, token_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """Load stored authentication token and profile from secure storage.
     
