@@ -1105,3 +1105,149 @@ def test_chikari_pitches_include_ratios():
     for p in cp:
         if p is not None:
             assert p.frequency > 0
+
+
+# ---------------------------------------------------------------------------
+# stratified_ratios under rule-set/ratios count mismatch
+# (port of the TS regression tests, src/ts/tests/raga.test.ts — idtap #24/#25/#26)
+#
+# Regression: transcription 63445d13 ("Mushtaq Ali Khan - Yaman", saved 2022)
+# stored 7 ratios + a synced tuning block. The editor grafts the raga's
+# CURRENT db rule set onto the saved raga, and Yaman's db rules later gained
+# lowered ma (8 pitches). Positional mapping would misassign everything after
+# ga and run off the end.
+# ---------------------------------------------------------------------------
+
+mismatch_fundamental = 248.8843372467667
+mismatch_stored_ratios = [
+    1, 1.122462048309373, 1.2591935011032134, 1.4142135623730951,
+    1.4983070768766815, 1.6817928305074292, 1.8790454984280236,
+]
+mismatch_stored_tuning = {
+    'sa': 1,
+    're': {'lowered': 1.0594630943592953, 'raised': 1.122462048309373},
+    'ga': {'lowered': 1.189207115002721, 'raised': 1.2591935011032134},
+    'ma': {'lowered': 1.3348398541700344, 'raised': 1.4142135623730951},
+    'pa': 1.4983070768766815,
+    'dha': {'lowered': 1.5874010519681994, 'raised': 1.6817928305074292},
+    'ni': {'lowered': 1.7817974362806785, 'raised': 1.8790454984280236},
+}
+mismatch_grafted_rule_set = {
+    'sa': True,
+    're': {'lowered': False, 'raised': True},
+    'ga': {'lowered': False, 'raised': True},
+    'ma': {'lowered': True, 'raised': True},  # gained lowered ma since save
+    'pa': True,
+    'dha': {'lowered': False, 'raised': True},
+    'ni': {'lowered': False, 'raised': True},
+}
+
+
+def make_mismatch_raga() -> Raga:
+    # from_json preserves transcription ratios verbatim (PROP-1) and warns
+    # about the count mismatch.
+    with pytest.warns(UserWarning):
+        return Raga.from_json({
+            'name': 'Yaman',
+            'fundamental': mismatch_fundamental,
+            'ratios': list(mismatch_stored_ratios),
+            'tuning': mismatch_stored_tuning,
+            'ruleSet': mismatch_grafted_rule_set,
+        })
+
+
+def make_aligned_raga() -> Raga:
+    return Raga.from_json({
+        'name': 'Yaman',
+        'fundamental': mismatch_fundamental,
+        'ratios': list(mismatch_stored_ratios),
+        'tuning': mismatch_stored_tuning,
+    })
+
+
+def test_mismatch_falls_back_to_tuning_no_none_frequencies_preserved():
+    raga = make_mismatch_raga()
+
+    # PROP-1: stored ratios preserved verbatim
+    assert raga.ratios == mismatch_stored_ratios
+
+    flat = []
+    for entry in raga.stratified_ratios:
+        if isinstance(entry, list):
+            flat.extend(entry)
+        else:
+            flat.append(entry)
+    assert all(v is not None for v in flat)
+
+    # existing variants keep their saved values (tuning was synced from the
+    # same ratios at save time)
+    sr = raga.stratified_ratios
+    assert sr[0] == 1
+    assert sr[1][1] == mismatch_stored_ratios[1]  # re raised
+    assert sr[3][1] == mismatch_stored_ratios[3]  # ma raised (tivra)
+    assert sr[4] == mismatch_stored_ratios[4]     # pa
+    assert sr[6][1] == mismatch_stored_ratios[6]  # ni raised
+    # the newly-enabled variant gets its tuning value
+    assert sr[3][0] == mismatch_stored_tuning['ma']['lowered']
+
+    # and Pitch construction no longer misbehaves
+    p = Pitch({'swara': 'ma', 'raised': True,
+               'fundamental': mismatch_fundamental, 'ratios': sr})
+    assert math.isclose(
+        p.frequency, mismatch_stored_ratios[3] * mismatch_fundamental,
+        abs_tol=1e-6,
+    )
+
+
+def test_aligned_counts_keep_exact_positional_behavior():
+    raga = make_aligned_raga()
+    sr = raga.stratified_ratios
+    assert sr[0] == mismatch_stored_ratios[0]
+    assert sr[3][1] == mismatch_stored_ratios[3]
+    flat = []
+    for entry in sr:
+        if isinstance(entry, list):
+            flat.extend(entry)
+        else:
+            flat.append(entry)
+    assert all(v is not None for v in flat)
+
+
+def test_get_frequencies_pairs_1_to_1_with_get_pitches():
+    # y-axis consumers zip frequencies with pitch-derived labels by index
+    mismatched = make_mismatch_raga()
+    aligned = make_aligned_raga()
+    for raga in (mismatched, aligned):
+        freqs = raga.get_frequencies(low=100, high=800)
+        pitches = raga.get_pitches(low=100, high=800)
+        assert len(freqs) == len(pitches)
+        for f, p in zip(freqs, pitches):
+            assert math.isclose(f, p.frequency, abs_tol=1e-10)
+    # the mismatch raga's octave now genuinely has 8 degrees (komal ma added)
+    in_octave = mismatched.get_frequencies(
+        low=mismatch_fundamental, high=mismatch_fundamental * 1.999)
+    assert len(in_octave) == 8
+
+
+def test_pitch_from_log_freq_assigns_correct_swara_on_mismatch_ragas():
+    raga = make_mismatch_raga()
+    # used to index self.ratios (7) against the rule-set walk (8): drawing a
+    # tivra ma came back labeled komal ma, pa came back as tivra ma, etc.
+    cases = [
+        (mismatch_stored_tuning['ma']['raised'], 3, True),   # tivra ma
+        (mismatch_stored_tuning['ma']['lowered'], 3, False), # komal ma
+        (mismatch_stored_tuning['pa'], 4, True),
+        (mismatch_stored_tuning['ni']['raised'], 6, True),
+        (1, 0, True),                                        # sa
+    ]
+    for ratio, swara, raised in cases:
+        p = raga.pitch_from_log_freq(math.log2(ratio * mismatch_fundamental))
+        assert (p.swara, p.raised) == (swara, raised)
+        assert math.isclose(
+            p.frequency, ratio * mismatch_fundamental, abs_tol=1e-6)
+    # octaves + log_offset still behave
+    up = raga.pitch_from_log_freq(
+        math.log2(2 * mismatch_fundamental) + 0.01)
+    assert up.swara == 0
+    assert up.oct == 1
+    assert math.isclose(up.log_offset, 0.01, abs_tol=1e-8)

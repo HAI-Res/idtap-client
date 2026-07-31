@@ -400,37 +400,13 @@ class Raga:
     # ------------------------------------------------------------------
     def get_pitches(self, low: float = 100, high: float = 800) -> List[Pitch]:
         """Get all pitches in the given frequency range.
-        
-        When ratios have been preserved from transcription data, we generate
-        pitches based on those actual ratios rather than the rule_set.
+
+        Always walks the rule_set against tuning (mirroring the TS model).
+        Tuning holds a value for every variant, so this stays correct even
+        when stored transcription ratios and the current rule set disagree —
+        stratified_ratios handles that fallback for the per-pitch ratio grids.
         """
         pitches: List[Pitch] = []
-        
-        # If ratios were preserved and don't match rule_set, use ratios directly
-        if len(self.ratios) != self.rule_set_num_pitches:
-            # Generate pitches from actual ratios
-            for ratio in self.ratios:
-                freq = ratio * self.fundamental
-                low_exp = math.ceil(math.log2(low / freq))
-                high_exp = math.floor(math.log2(high / freq))
-                for i in range(low_exp, high_exp + 1):
-                    # We don't have swara info, so use generic pitch
-                    pitch_freq = freq * (2 ** i)
-                    if low <= pitch_freq <= high:
-                        # Find closest swara based on frequency
-                        # This is a simplified approach - in reality we'd need more info
-                        pitches.append(Pitch({
-                            'swara': 'sa',  # Placeholder
-                            'oct': i,
-                            'fundamental': self.fundamental,
-                            'ratios': self.stratified_ratios
-                        }))
-            pitches.sort(key=lambda p: p.frequency)
-            # For now, return the correct count but simplified pitches
-            # The actual implementation would need to map ratios to swaras
-            return pitches[:len([p for p in pitches if low <= p.frequency <= high])]
-        
-        # Normal case: use rule_set
         for s, val in self.rule_set.items():
             if isinstance(val, bool):
                 if val:
@@ -458,29 +434,19 @@ class Raga:
     @property
     def stratified_ratios(self) -> List[Union[float, List[float]]]:
         """Get stratified ratios matching the structure of the rule_set.
-        
-        When ratios were preserved from transcription data (preserve_ratios=True),
-        they may not match the rule_set structure. In this case, we use the
-        tuning values directly since the ratios represent the actual transcribed
-        pitches, not the theoretical rule_set structure.
+
+        self.ratios maps onto the rule set positionally, so it is only usable
+        when the counts line up. They can diverge on old transcriptions: the
+        editor grafts the raga's CURRENT db rule set onto the saved raga, and
+        if the rules gained a variant since the transcription was saved (e.g.
+        Yaman later allowing komal ma), walking self.ratios would misassign
+        every ratio after the divergence and run off the end (index error /
+        None slots). In that case fall back to tuning, which holds a value for
+        every variant and was synced from these same ratios at save time —
+        existing pitches keep their exact frequencies. (PROP-1: self.ratios
+        itself stays untouched.)
         """
-        # If we have a mismatch, use tuning directly
-        if len(self.ratios) != self.rule_set_num_pitches:
-            # Build stratified ratios from tuning (which was updated from ratios)
-            ratios: List[Union[float, List[float]]] = []
-            for s in ['sa', 're', 'ga', 'ma', 'pa', 'dha', 'ni']:
-                val = self.rule_set[s]
-                base = self.tuning[s]
-                if isinstance(val, bool):
-                    ratios.append(base)  # type: ignore
-                else:
-                    pair: List[float] = []
-                    pair.append(base['lowered'])  # type: ignore
-                    pair.append(base['raised'])  # type: ignore
-                    ratios.append(pair)
-            return ratios
-        
-        # Normal case: ratios match rule_set
+        aligned = len(self.ratios) == self.rule_set_num_pitches
         ratios: List[Union[float, List[float]]] = []
         ct = 0
         for s in ['sa', 're', 'ga', 'ma', 'pa', 'dha', 'ni']:
@@ -488,18 +454,20 @@ class Raga:
             base = self.tuning[s]
             if isinstance(val, bool):
                 if val:
-                    ratios.append(self.ratios[ct])
+                    ratios.append(self.ratios[ct] if aligned else base)  # type: ignore
                     ct += 1
                 else:
                     ratios.append(base)  # type: ignore
             else:
                 pair: List[float] = []
                 if val.get('lowered'):
-                    pair.append(self.ratios[ct]); ct += 1
+                    pair.append(self.ratios[ct] if aligned else base['lowered'])  # type: ignore
+                    ct += 1
                 else:
                     pair.append(base['lowered'])  # type: ignore
                 if val.get('raised'):
-                    pair.append(self.ratios[ct]); ct += 1
+                    pair.append(self.ratios[ct] if aligned else base['raised'])  # type: ignore
+                    ct += 1
                 else:
                     pair.append(base['raised'])  # type: ignore
                 ratios.append(pair)
@@ -537,15 +505,15 @@ class Raga:
         return [sa_high, sa_low, pa_pitch, ga_pitch]
 
     def get_frequencies(self, low: float = 100, high: float = 800) -> List[float]:
-        freqs: List[float] = []
-        for ratio in self.ratios:
-            base = ratio * self.fundamental
-            low_exp = math.ceil(math.log2(low / base))
-            high_exp = math.floor(math.log2(high / base))
-            for i in range(low_exp, high_exp + 1):
-                freqs.append(base * (2 ** i))
-        freqs.sort()
-        return freqs
+        """All octave instances of the raga's pitches between low and high.
+
+        Derived from get_pitches so consumers that zip positions with
+        pitch-derived labels by index always stay 1:1 — walking self.ratios
+        here diverges from the rule-set walk whenever stored ratios and the
+        current rule set disagree (see stratified_ratios), which offset every
+        label.
+        """
+        return [p.frequency for p in self.get_pitches(low=low, high=high)]
 
     @property
     def sargam_names(self) -> List[str]:
@@ -580,31 +548,27 @@ class Raga:
 
     # ------------------------------------------------------------------
     def pitch_from_log_freq(self, log_freq: float) -> Pitch:
-        epsilon = 1e-6
-        log_options = [math.log2(f) for f in self.get_frequencies(low=75, high=2400)]
-        quantized = min(log_options, key=lambda x: abs(x - log_freq))
+        """Quantize a log frequency to the nearest raga pitch.
+
+        Takes swara/oct/raised from the quantized pitch object directly.
+        Looking the letter up by index into self.ratios (as this used to)
+        breaks whenever stored ratios and the current rule set disagree (see
+        stratified_ratios): the index runs against a differently-shaped array
+        and every degree from the divergence up gets the wrong swara —
+        corrupting newly drawn trajectories on such transcriptions.
+        """
+        pitches = self.get_pitches(low=75, high=2400)
+        options = [math.log2(p.frequency) for p in pitches]
+        quantized = min(options, key=lambda x: abs(x - log_freq))
         log_offset = log_freq - quantized
-        log_diff = quantized - math.log2(self.fundamental)
-        rounded = round(log_diff)
-        if abs(log_diff - rounded) < epsilon:
-            log_diff = rounded
-        oct_offset = math.floor(log_diff)
-        log_diff -= oct_offset
-        # find closest ratio index
-        r_idx = 0
-        for i, r in enumerate(self.ratios):
-            if abs(r - 2 ** log_diff) < 1e-6:
-                r_idx = i
-                break
-        swara_letter = self.sargam_letters[r_idx]
-        raised = swara_letter.isupper()
+        chosen = pitches[options.index(quantized)]
         return Pitch({
-            'swara': swara_letter,
-            'oct': oct_offset,
+            'swara': chosen.swara,
+            'oct': chosen.oct,
             'fundamental': self.fundamental,
             'ratios': self.stratified_ratios,
             'log_offset': log_offset,
-            'raised': raised,
+            'raised': chosen.raised,
         })
 
     def ratio_idx_to_tuning_tuple(self, idx: int) -> Tuple[str, Optional[str]]:
