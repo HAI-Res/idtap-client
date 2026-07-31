@@ -227,8 +227,11 @@ class SwaraClient:
         if not self.user_id:
             raise RuntimeError("Not authenticated: cannot insert new transcription")
         payload = dict(piece)
-        payload["userID"] = self.user_id
-        return self._post_json("insertNewTranscription", payload)
+        # The server derives the owner from the authenticated token; an _id-less
+        # POST to api/transcription is the insert path.
+        payload.pop("_id", None)
+        payload.pop("userID", None)
+        return self._post_json("api/transcription", payload)
 
     def clone_transcription(
         self,
@@ -256,10 +259,8 @@ class SwaraClient:
         """
         if not self.user_id:
             raise RuntimeError("Not authenticated: cannot clone transcription")
-        payload: Dict[str, Any] = {
-            "id": piece_id,
-            "newOwner": self.user_id,
-        }
+        # The server assigns ownership from the authenticated token.
+        payload: Dict[str, Any] = {}
         if title is not None:
             payload["title"] = title
         if self.user:
@@ -278,7 +279,7 @@ class SwaraClient:
             payload["soloist"] = soloist
         if solo_instrument is not None:
             payload["soloInstrument"] = solo_instrument
-        return self._post_json("cloneTranscription", payload)
+        return self._post_json(f"api/transcription/{piece_id}/clone", payload)
 
     def delete_transcription(self, piece_id: str) -> Any:
         """Delete a transcription from the server.
@@ -294,11 +295,10 @@ class SwaraClient:
         """
         if not self.user_id:
             raise RuntimeError("Not authenticated: cannot delete transcription")
-        payload = {
-            "_id": piece_id,
-            "userID": self.user_id,
-        }
-        return self._delete_json("oneTranscription", payload)
+        response = self._request("delete", f"api/transcription/{piece_id}")
+        if response.content:
+            return response.json()
+        return None
 
     def _prompt_for_waiver_if_needed(self) -> None:
         """Interactively prompt user to agree to waiver if not already agreed."""
@@ -847,9 +847,9 @@ class SwaraClient:
                 - etc.
 
         Raises:
-            requests.HTTPError: If recording not found (404)
+            requests.HTTPError: If recording not found (404) or not viewable (403)
         """
-        return self._get("getAudioRecording", params={"_id": audio_id})
+        return self._get(f"api/audioRecording/{audio_id}")
 
     def save_transcription(self, piece: Piece, fill_duration: bool = True) -> Any:
         """Save a transcription piece to the server.
