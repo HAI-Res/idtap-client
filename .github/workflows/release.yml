@@ -18,6 +18,7 @@ jobs:
       id-token: write    # OIDC for PyPI trusted publishing
       contents: write    # Create releases and tags
       actions: write     # Update workflow permissions if needed
+      pull-requests: write  # Version-bump commit lands via an auto-merged PR
       
     steps:
       - name: Checkout code
@@ -105,6 +106,28 @@ jobs:
           echo "Building package..."
           python -m build
           
+      - name: Commit version bump
+        # Runs BEFORE publish so a failure here leaves a clean state (no
+        # published version the repo doesn't know about). main is branch-
+        # protected (require-PR), so a direct push is rejected — land the bump
+        # through an auto-merged PR instead (0 approvals required; pushes made
+        # with GITHUB_TOKEN don't re-trigger this workflow, so no loop).
+        if: steps.release-check.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="release/v${{ steps.bump-version.outputs.new_version }}"
+          git checkout -b "$BRANCH"
+          git add idtap/__init__.py pyproject.toml docs/conf.py
+          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.new_version }} [skip release]"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "chore: bump version to ${{ steps.bump-version.outputs.new_version }} [skip release]" \
+            --body "Automated version bump from the release workflow."
+          gh pr merge "$BRANCH" --squash --delete-branch
+          git tag "v${{ steps.bump-version.outputs.new_version }}"
+          git push origin "v${{ steps.bump-version.outputs.new_version }}"
+
       - name: Publish to PyPI
         if: steps.release-check.outputs.should_release == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -112,15 +135,6 @@ jobs:
           # Using trusted publishing - no username/password needed
           # PyPI trusted publisher must be configured for this repo
           print-hash: true
-          
-      - name: Commit version bump
-        if: steps.release-check.outputs.should_release == 'true'
-        run: |
-          git add idtap/__init__.py pyproject.toml docs/conf.py
-          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.new_version }}"
-          git tag "v${{ steps.bump-version.outputs.new_version }}"
-          git push origin main
-          git push origin "v${{ steps.bump-version.outputs.new_version }}"
           
       - name: Output release info
         if: steps.release-check.outputs.should_release == 'true'
