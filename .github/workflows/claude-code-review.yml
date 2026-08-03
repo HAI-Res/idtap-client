@@ -36,12 +36,8 @@ jobs:
           additional_permissions: |
             actions: read
 
-          prompt: |
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
-
-            Be constructive and helpful in your feedback.
+          # No `prompt:` on purpose — with a prompt the action runs in agent
+          # mode, which posts no tracking comment (the review vanished, run
+          # 30861734693). Tag mode reads the "@claude review" comment as the
+          # instruction and posts the review in its own comment, matching the
+          # working idtap setup.
