@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Optional, Dict, Union, Any
 from datetime import datetime, timezone
+import warnings
 
 from .phrase import Phrase
 from .trajectory import Trajectory
@@ -445,7 +446,6 @@ class Piece:
                     try:
                         Instrument(inst)
                     except ValueError:
-                        import warnings
                         warnings.warn(f"Unknown instrument name: '{inst}'. This may cause issues with instrument-specific features.", UserWarning)
         
         # Validate grid structure consistency
@@ -453,7 +453,6 @@ class Piece:
             phrase_grid = opts['phraseGrid']
             instrumentation = opts['instrumentation']
             if len(phrase_grid) != len(instrumentation):
-                import warnings
                 warnings.warn(f"phraseGrid has {len(phrase_grid)} tracks but instrumentation has {len(instrumentation)} instruments. "
                              "These should typically match.", UserWarning)
         
@@ -1095,8 +1094,7 @@ class Piece:
                                 second.pop(i)
                             i -= 1
                         if total > target + eps:
-                            import warnings
-                            warnings.warn(
+                                warnings.warn(
                                 f"ensure_string_synchronization: track {track_idx}, "
                                 f"phrase {phrase.piece_idx}: second-string trajectories "
                                 f"span {total}s but the phrase is {target}s; sounding "
@@ -1612,7 +1610,7 @@ class Piece:
         piece.dur_array_from_phrases()
         piece.section_starts_grid = [sorted(set(arr)) for arr in piece.section_starts_grid]
 
-        # STRING-SYNC: keep the polyphonic 2nd string aligned, matching the TS client.
-        piece.ensure_string_synchronization()
+        # STRING-SYNC runs in Piece.__init__ (matching the TS constructor) — no
+        # second call here, or overhang warnings would fire twice per load.
 
         return piece

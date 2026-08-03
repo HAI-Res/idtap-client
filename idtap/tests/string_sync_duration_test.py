@@ -77,6 +77,23 @@ def test_sounding_overhang_preserved_and_warned():
     assert piece.dur_tot == pytest.approx(10, abs=1e-6)
 
 
+def test_from_json_warns_exactly_once_for_sounding_overhang():
+    import warnings as warnings_mod
+    phrase = Phrase({
+        'trajectory_grid': [[silent(10)], [silent(2), sounding(14)]],
+    })
+    with pytest.warns(UserWarning):
+        piece = make_piece(phrase)
+    with warnings_mod.catch_warnings(record=True) as caught:
+        warnings_mod.simplefilter('always')
+        reloaded = Piece.from_json(piece.to_json())
+        sync_warnings = [w for w in caught
+                         if 'ensure_string_synchronization' in str(w.message)]
+    # sync runs once (in __init__), not again at the end of from_json
+    assert len(sync_warnings) == 1
+    assert reloaded.dur_tot == pytest.approx(10, abs=1e-6)
+
+
 def test_healthy_dual_string_phrase_untouched():
     phrase = Phrase({
         'trajectory_grid': [
