@@ -257,6 +257,10 @@ class Piece:
         else:
             self.update_start_times()
 
+        # Mirror the TS constructor: keep polyphonic second strings synchronized
+        # (idempotent; from_json also calls this on the load path)
+        self.ensure_string_synchronization()
+
     def _validate_parameters(self, opts: dict) -> None:
         """Validate constructor parameters and provide helpful error messages."""
         if not opts:
@@ -957,31 +961,6 @@ class Piece:
                             return string_idx
         raise ValueError("Trajectory not found in any string")
 
-    def ensure_string_synchronization(self) -> None:
-        """For Sitar/Sarangi, ensure trajectory_grid[1] exists and is synchronized.
-
-        If string 1 is empty or contains only silent trajectories (id=12),
-        fill it with a single silent trajectory matching the phrase duration.
-        """
-        polyphonic_instruments = {Instrument.Sitar, Instrument.Sarangi}
-        for inst_idx, inst in enumerate(self.instrumentation):
-            if inst not in polyphonic_instruments:
-                continue
-            for phrase in self.phrase_grid[inst_idx]:
-                # Ensure trajectory_grid has at least 2 entries
-                while len(phrase.trajectory_grid) < 2:
-                    phrase.trajectory_grid.append([])
-
-                string_1 = phrase.trajectory_grid[1]
-                is_empty_or_silent = (
-                    len(string_1) == 0 or
-                    all(t.id == 12 for t in string_1)
-                )
-                if is_empty_or_silent:
-                    silent = Trajectory({'id': 12, 'dur_tot': phrase.dur_tot})
-                    phrase.trajectory_grid[1] = [silent]
-                phrase.reset()
-
     def traj_from_uid(self, uid: str, track: int = 0) -> Trajectory:
         for t in self.all_trajectories(track):
             if t.unique_id == uid:
@@ -1078,6 +1057,12 @@ class Piece:
         Idempotent by design: an existing silent trajectory is PRESERVED (its uniqueId
         kept), and a fresh one is synthesized only when the second string is empty — so
         to_json -> from_json -> to_json is byte-stable.
+
+        Second strings holding non-silent content are reconciled against the phrase
+        duration (the main string is authoritative — TS parity, idtap#34): trailing
+        silence is trimmed, shortfalls are padded with silence, and sounding overhang
+        is warned about but never destroyed. The reconciliation is deterministic, so
+        round-trips remain stable after the first normalization.
         """
         for track_idx, track_phrases in enumerate(self.phrase_grid):
             if track_idx >= len(self.instrumentation):
@@ -1092,6 +1077,42 @@ class Piece:
                 second = phrase.trajectory_grid[1]
                 has_non_silent = any(t.id != 12 for t in second)
                 if second and has_non_silent:
+                    # Reconcile a drifted second string with the phrase duration.
+                    # Historic phrase divisions could leave string-2 trajectories
+                    # spanning the pre-division range, stretching the timeline
+                    # against the audio (idtap#34).
+                    eps = 1e-6
+                    target = phrase.dur_tot or 0
+                    total = sum(t.dur_tot for t in second)
+                    if total > target + eps:
+                        # Trim trailing silence; never cut sounding trajectories
+                        i = len(second) - 1
+                        while i >= 0 and total > target + eps and second[i].id == 12:
+                            cut = min(total - target, second[i].dur_tot)
+                            second[i].dur_tot -= cut
+                            total -= cut
+                            if second[i].dur_tot < eps:
+                                second.pop(i)
+                            i -= 1
+                        if total > target + eps:
+                            import warnings
+                            warnings.warn(
+                                f"ensure_string_synchronization: track {track_idx}, "
+                                f"phrase {phrase.piece_idx}: second-string trajectories "
+                                f"span {total}s but the phrase is {target}s; sounding "
+                                f"content extends past the phrase and was left "
+                                f"untouched.",
+                                UserWarning,
+                            )
+                        phrase.reset()
+                    elif total < target - eps:
+                        second.append(Trajectory({
+                            'id': 12,
+                            'dur_tot': target - total,
+                            'fund_id12': self.raga.fundamental,
+                            'start_time': total,
+                        }))
+                        phrase.reset()
                     continue
                 # Empty or all-silent: collapse to a single silent trajectory. Reuse the
                 # first existing silent traj (preserve its uniqueId) for idempotence.
