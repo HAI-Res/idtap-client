@@ -756,9 +756,9 @@ def plot_pitch_prevalence(
                         fontsize=font_cell, color=text_color)
 
         # Web-app parity: the segment's whole pitch-range block is outlined in
-        # black (sectionRects get stroke 'black' in PitchPrevalence.vue).
-        # Standard mode only, like the web app.
-        if (not heatmap and output_type != 'chroma'
+        # black (sectionRects get stroke 'black' in PitchPrevalence.vue, in
+        # both standard and heatmap modes -- only pitch-chroma mode skips it).
+        if (output_type != 'chroma'
                 and seg_lo in pitch_rows and seg_hi in pitch_rows):
             block_bottom = pitch_rows.index(seg_lo) * cell_h
             block_top = (pitch_rows.index(seg_hi) + 1) * cell_h
