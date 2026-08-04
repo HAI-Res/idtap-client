@@ -213,6 +213,19 @@ class TestPlotPitchPrevalence:
         assert 'Composition' not in texts
         plt.close(fig)
 
+    def test_raga_only_pitch_labels(self):
+        from idtap.classes.raga import Raga
+        piece = _mock_piece()   # trajs span pitch numbers 0..7
+        piece.raga = Raga()     # all-raised rule set: 0, 2, 4, 6, 7 in range
+        piece.title = 'Test'
+        fig = plot_pitch_prevalence(piece, segmentation='duration')
+        texts = [t.get_text() for t in fig.axes[0].texts]
+        for raga_letter in ('S', 'R', 'G', 'M', 'P'):
+            assert raga_letter in texts
+        for non_raga_letter in ('r', 'g', 'm'):   # chromatic rows 1, 3, 5
+            assert non_raga_letter not in texts
+        plt.close(fig)
+
 
 # ---------------------------------------------------------------------------
 # plot_pitch_patterns tests

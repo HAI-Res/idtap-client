@@ -500,7 +500,20 @@ def plot_pitch_prevalence(
     # ------------------------------------------------------------------ #
     # 4. Sargam labels + octave grouping                                  #
     # ------------------------------------------------------------------ #
-    sargam_labels = [_pitch_sargam_label(p) for p in pitch_rows_display]
+    # Web-app parity: the y axis only labels the raga's own pitches
+    # (raga.getPitchNumbers), leaving non-raga chromatic rows as unlabeled
+    # space at their correct offsets. Fall back to chromatic labels when the
+    # piece has no usable raga.
+    sargam_labels: List[str]
+    try:
+        raga_pns = set(piece.raga.get_pitch_numbers(lo, hi))
+        sargam_labels = [
+            (piece.raga.pitch_number_to_sargam_letter(p) or '')
+            if p in raga_pns else ''
+            for p in pitch_rows_display
+        ]
+    except Exception:
+        sargam_labels = [_pitch_sargam_label(p) for p in pitch_rows_display]
 
     # Octave groups (for pitchNumber mode, non-chroma)
     # Always group by semitone octave (// 12) regardless of condensed mode,
@@ -742,6 +755,18 @@ def plot_pitch_prevalence(
                         ha='center', va='center',
                         fontsize=font_cell, color=text_color)
 
+        # Web-app parity: the segment's whole pitch-range block is outlined in
+        # black (sectionRects get stroke 'black' in PitchPrevalence.vue).
+        # Standard mode only, like the web app.
+        if (not heatmap and output_type != 'chroma'
+                and seg_lo in pitch_rows and seg_hi in pitch_rows):
+            block_bottom = pitch_rows.index(seg_lo) * cell_h
+            block_top = (pitch_rows.index(seg_hi) + 1) * cell_h
+            ax.add_patch(Rectangle(
+                (ci * cell_w, block_bottom), cell_w, block_top - block_bottom,
+                facecolor='none', edgecolor='black', linewidth=0.8, zorder=3,
+            ))
+
     # ------------------------------------------------------------------ #
     # 9. Y-axis labels: sargam letters                                    #
     # ------------------------------------------------------------------ #
@@ -819,15 +844,11 @@ def plot_pitch_prevalence(
     # ------------------------------------------------------------------ #
     # 12. Titles and subtitles                                            #
     # ------------------------------------------------------------------ #
+    # Web-app parity: title and subtitle sit in boxed rows spanning the full
+    # table width (including the row-label column), stacked directly on the
+    # header block, like the wideLines rows in PitchPrevalence.vue.
     top_y = n_rows * cell_h + header_height
 
-    # Piece title
-    piece_title = title or getattr(piece, 'title', '')
-    if piece_title:
-        ax.text(n_seg * cell_w / 2, top_y + 1.0, piece_title,
-                ha='center', va='bottom', fontsize=11, fontweight='bold')
-
-    # Subtitle
     pr_label = 'Fixed Pitch' if pitch_representation == 'fixed_pitch' else 'Pitch Onsets'
     if segmentation == 'section':
         subtitle = f'Pitch Range and Percentage of Duration on each {pr_label}, Segmented by Section'
@@ -836,8 +857,21 @@ def plot_pitch_prevalence(
     else:
         subtitle = (f'Pitch Range and Percentage of Duration on each {pr_label}, '
                      f'Segmented into {segment_duration:.0f}s Windows')
-    ax.text(n_seg * cell_w / 2, top_y + 0.4, subtitle,
-            ha='center', va='bottom', fontsize=7, style='italic')
+
+    piece_title = title or getattr(piece, 'title', '')
+    title_rows = [subtitle] + ([piece_title] if piece_title else [])
+    band_x = -left_margin
+    band_w = left_margin + n_seg * cell_w
+    band_h = cell_h * 1.2
+    for bi, band_text in enumerate(title_rows):
+        by = top_y + bi * band_h
+        ax.add_patch(Rectangle(
+            (band_x, by), band_w, band_h,
+            facecolor='white', edgecolor='black', linewidth=0.8, zorder=10,
+        ))
+        ax.text(band_x + band_w / 2, by + band_h / 2, band_text,
+                ha='center', va='center', zorder=11,
+                fontsize=8 if bi == 0 else 9, fontweight='bold')
 
     fig.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.02)
     return fig
