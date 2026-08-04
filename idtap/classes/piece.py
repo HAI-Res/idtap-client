@@ -1374,6 +1374,40 @@ class Piece:
                 })
         return display
 
+    def all_display_consonant_symbols(self, inst: int = 0) -> List[Dict[str, Any]]:
+        """Consonant articulation points, as the web app's transcription
+        renderer marks them with diamonds (renderConsonantSymbols() in
+        TranscriptionLayer.vue).
+
+        A trajectory whose articulation at '0.00' is a consonant yields a
+        symbol at its start point on the curve; one at '1.00' yields a symbol
+        at its end point. ``position`` is ``'start'`` or ``'end'``; ``time``
+        and ``logFreq`` locate the symbol; the text fields carry the
+        consonant in each script.
+        """
+        display: List[Dict[str, Any]] = []
+        for phrase in self.phrase_grid[inst]:
+            phrase_start = phrase.start_time or 0
+            for t in phrase.trajectories:
+                for key, norm_x, position in (
+                    ("0.00", 0.0, "start"),
+                    ("1.00", 1.0, "end"),
+                ):
+                    art = t.articulations.get(key)
+                    if art is None or art.name != "consonant":
+                        continue
+                    display.append({
+                        "time": (phrase_start + (t.start_time or 0)
+                                 + norm_x * t.dur_tot),
+                        "logFreq": t.compute(norm_x, log_scale=True),
+                        "position": position,
+                        "ipaText": art.ipa,
+                        "devanagariText": art.hindi,
+                        "englishText": art.eng_trans,
+                        "uId": t.unique_id,
+                    })
+        return display
+
     def all_display_chikaris(self, inst: int = 0) -> List[Dict[str, Any]]:
         display: List[Dict[str, Any]] = []
         for p in self.phrase_grid[inst]:

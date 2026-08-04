@@ -164,6 +164,8 @@ def plot_melodic_contour(
     line_width: float = 1.0,
     ref_line_alpha: float = 0.3,
     title: Optional[str] = None,
+    show_consonants: bool = False,
+    consonant_size: float = 20.0,
 ) -> 'Figure':
     """Plot a melodic contour from a sequence of trajectories.
 
@@ -182,6 +184,14 @@ def plot_melodic_contour(
         line_width: Width of the contour line.
         ref_line_alpha: Alpha of raga reference lines.
         title: Optional plot title.
+        show_consonants: If *True*, mark consonant articulations with a
+            filled diamond on the curve, as the web app's transcription
+            renderer does (renderConsonantSymbols() in
+            TranscriptionLayer.vue): one at the trajectory start for an
+            articulation at '0.00', one at the end for '1.00'.  Drawn with
+            matplotlib's thin-diamond marker, whose taller-than-wide
+            proportions match d3.symbolDiamond's tan(30°) rhombus.
+        consonant_size: Marker area of the diamonds in points².
 
     Returns:
         The matplotlib Figure containing the plot.
@@ -206,6 +216,18 @@ def plot_melodic_contour(
         times = t0 + xs * traj.dur_tot
         log_freqs = [traj.compute(float(x), log_scale=True) for x in xs]
         ax.plot(times, log_freqs, color=line_color, linewidth=line_width)  # type: ignore[union-attr]
+
+        if show_consonants:
+            for key, norm_x in (('0.00', 0.0), ('1.00', 1.0)):
+                art = traj.articulations.get(key)
+                if art is None or art.name != 'consonant':
+                    continue
+                ax.scatter(  # type: ignore[union-attr]
+                    [t0 + norm_x * traj.dur_tot],
+                    [traj.compute(norm_x, log_scale=True)],
+                    marker='d', s=consonant_size, color=line_color,
+                    zorder=3, linewidths=0,
+                )
 
     # Raga reference lines
     if raga is not None:

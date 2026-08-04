@@ -107,6 +107,33 @@ class TestPlotMelodicContour:
         assert fig is not None
         plt.close(fig)
 
+    def test_show_consonants_draws_diamonds(self):
+        traj = _fixed_traj('sa', dur=2.0)
+        traj.add_consonant('ka')
+        traj.add_consonant('ga', start=False)
+        trajs = [traj, _fixed_traj('pa', dur=1.0)]
+
+        fig, ax = plt.subplots()
+        plot_melodic_contour(trajs, ax=ax, show_consonants=True)
+        # One PathCollection per diamond: start + end of the first trajectory.
+        from matplotlib.collections import PathCollection
+        diamonds = [c for c in ax.collections if isinstance(c, PathCollection)]
+        assert len(diamonds) == 2
+        starts = diamonds[0].get_offsets()
+        ends = diamonds[1].get_offsets()
+        assert starts[0][0] == pytest.approx(0.0)
+        assert ends[0][0] == pytest.approx(2.0)
+        plt.close(fig)
+
+    def test_show_consonants_off_by_default(self):
+        traj = _fixed_traj('sa', dur=2.0)
+        traj.add_consonant('ka')
+        fig, ax = plt.subplots()
+        plot_melodic_contour([traj], ax=ax)
+        from matplotlib.collections import PathCollection
+        assert not [c for c in ax.collections if isinstance(c, PathCollection)]
+        plt.close(fig)
+
     def test_only_silence(self):
         trajs = [_silent_traj(5.0)]
         fig = plot_melodic_contour(trajs)
