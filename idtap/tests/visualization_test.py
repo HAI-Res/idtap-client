@@ -189,6 +189,30 @@ class TestPlotPitchPrevalence:
         with pytest.raises(ValueError, match='Unknown segmentation'):
             plot_pitch_prevalence(piece, segmentation='unknown')
 
+    def test_section_types_filter(self):
+        trajs = _sample_trajs()
+        phrase = MagicMock()
+        phrase.trajectory_grid = [trajs]
+
+        piece = MagicMock()
+        piece.dur_tot = 16.0
+        sections = []
+        for sec_type in ('Improvisation', 'Composition'):
+            sec = MagicMock()
+            sec.phrases = [phrase]
+            sec.categorization = {'Top Level': sec_type}
+            sections.append(sec)
+        piece.sections_grid = [sections]
+        piece.section_starts_grid = [[0, 1]]
+        piece.dur_starts.return_value = [0.0, 8.0]
+
+        fig = plot_pitch_prevalence(piece, segmentation='section',
+                                    section_types=['Improvisation'])
+        texts = [t.get_text() for t in fig.axes[0].texts]
+        assert 'Improvisation' in texts
+        assert 'Composition' not in texts
+        plt.close(fig)
+
 
 # ---------------------------------------------------------------------------
 # plot_pitch_patterns tests

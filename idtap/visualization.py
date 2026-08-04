@@ -274,6 +274,7 @@ def plot_pitch_prevalence(
     segmentation: str = 'section',
     output_type: str = 'pitchNumber',
     pitch_representation: str = 'fixed_pitch',
+    section_types: Optional[List[str]] = None,
     condensed: bool = False,
     heatmap: bool = False,
     segment_duration: float = 10,
@@ -304,6 +305,10 @@ def plot_pitch_prevalence(
         segmentation: ``'section'``, ``'phrase'``, or ``'duration'``.
         output_type: ``'pitchNumber'`` or ``'chroma'``.
         pitch_representation: ``'fixed_pitch'`` or ``'pitch_onsets'``.
+        section_types: Only show sections whose Top Level categorization is
+            in this list (e.g. ``['Improvisation']``), keeping their original
+            section numbers — the web app's per-type checkboxes.  Only
+            meaningful with ``segmentation='section'``.  *None* shows all.
         condensed: Show only pitches that appear in data (fewer rows).
         heatmap: Use white-to-black gradient coloring.
         segment_duration: Seconds per segment when ``segmentation='duration'``.
@@ -433,6 +438,11 @@ def plot_pitch_prevalence(
     else:
         raise ValueError(f'Unknown segmentation: {segmentation}')
 
+    if section_types is not None and segmentation == 'section':
+        keep = [i for i, m in enumerate(seg_meta) if m['type'] in section_types]
+        segments = [segments[i] for i in keep]
+        seg_meta = [seg_meta[i] for i in keep]
+
     n_seg = len(segments)
     if n_seg == 0:
         fig, ax = plt.subplots(figsize=figsize or (10, 6))
@@ -505,7 +515,9 @@ def plot_pitch_prevalence(
     # 5. Header layout                                                    #
     # ------------------------------------------------------------------ #
     if segmentation == 'section':
-        header_row_labels = ['Section #', 'Start', 'Duration', 'Sec. Type']
+        # Bottom (closest to pitch grid) → top, matching the web app's layout
+        # ('Sec. Type' hugs the grid, 'Section #' is the top row).
+        header_row_labels = ['Sec. Type', 'Duration', 'Start', 'Section #']
     elif segmentation == 'phrase':
         # Bottom (closest to pitch grid) → top; spanning rows at top
         header_row_labels = [
