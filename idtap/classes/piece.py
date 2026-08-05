@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .section import Section
+    from .simple_trajectory import SimpleTrajectory
 
 SecCatType = Dict[str, Union[Dict[str, bool], str]]
 
@@ -915,6 +916,21 @@ class Piece:
             if string_idx < len(p.trajectory_grid):
                 trajs.extend(p.trajectory_grid[string_idx])
         return trajs
+
+    def simplified_trajectories(self, inst: int = 0, string_idx: int = 0) -> List['SimpleTrajectory']:
+        """All trajectories of a track broken into simple-trajectory chunks.
+
+        Returns a flat, time-ordered list of SimpleTrajectory objects whose
+        orientation-dot times are absolute piece time in seconds. See
+        ``idtap.classes.simple_trajectory`` for the representation.
+        """
+        from .simple_trajectory import decompose_trajectory
+        trajs = self.all_trajectories(inst, string_idx)
+        starts = self.traj_start_times(inst, string_idx)
+        chunks: List['SimpleTrajectory'] = []
+        for traj, start in zip(trajs, starts):
+            chunks.extend(decompose_trajectory(traj, start))
+        return chunks
 
     # ------------------------------------------------------------------
     def track_from_traj(self, traj: Trajectory) -> int:

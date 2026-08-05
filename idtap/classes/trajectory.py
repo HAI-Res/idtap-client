@@ -1,7 +1,10 @@
 from __future__ import annotations
 import math
 import uuid
-from typing import List, Dict, Optional, Callable, TypedDict
+from typing import List, Dict, Optional, Callable, TypedDict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .simple_trajectory import SimpleTrajectory
 
 import humps
 
@@ -900,6 +903,16 @@ class Trajectory:
             self.vowel_hindi = None
             self.vowel_ipa = None
             self.vowel_eng_trans = None
+
+    def to_simple(self, start_time: Optional[float] = None) -> List['SimpleTrajectory']:
+        """Break this trajectory into simple-trajectory chunks.
+
+        See ``idtap.classes.simple_trajectory`` for the representation.
+        ``start_time`` sets the absolute time of the first orientation dot;
+        defaults to this trajectory's own (phrase-relative) start_time.
+        """
+        from .simple_trajectory import decompose_trajectory
+        return decompose_trajectory(self, start_time)
 
     def to_json(self) -> Dict:
         data = {
