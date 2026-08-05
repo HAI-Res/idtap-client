@@ -3,6 +3,10 @@ name: Automated Release
 on:
   push:
     branches: [ main ]
+  # Manual recovery path: if a release run bumped/tagged but the PyPI upload
+  # failed (e.g. transient OIDC outage), dispatching this workflow publishes
+  # the version main is already at, without bumping again.
+  workflow_dispatch:
 
 jobs:
   release:
@@ -64,35 +68,42 @@ jobs:
           fi
           echo "✅ Versions are consistent"
           
-      - name: Check if version bump is needed
+      - name: Determine release mode
         id: release-check
         run: |
-          # Check if commit message contains [skip release] or [skip ci]
-          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
-          echo "Latest commit message: $COMMIT_MESSAGE"
-          
-          if echo "$COMMIT_MESSAGE" | grep -q "\[skip release\]\|\[skip ci\]"; then
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            echo "🚫 Skipping release due to [skip release] or [skip ci] in commit message"
+          # Modes: release (bump + publish), publish-only (manual dispatch:
+          # publish the version main is already at), skip (bump commits).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=publish-only" >> $GITHUB_OUTPUT
+            echo "🔁 Manual dispatch: publishing current version without bumping"
           else
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "✅ Version will be bumped"
+            COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+            echo "Latest commit message: $COMMIT_MESSAGE"
+            if echo "$COMMIT_MESSAGE" | grep -q "\[skip release\]\|\[skip ci\]"; then
+              echo "mode=skip" >> $GITHUB_OUTPUT
+              echo "🚫 Skipping release due to [skip release] or [skip ci] in commit message"
+            else
+              echo "mode=release" >> $GITHUB_OUTPUT
+              echo "✅ Version will be bumped"
+            fi
           fi
+          CURRENT_VERSION=$(python -c "import idtap; print(idtap.__version__)")
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           
       - name: Run tests
-        if: steps.release-check.outputs.should_release == 'true'
+        if: steps.release-check.outputs.mode != 'skip'
         run: |
           echo "Running tests before release..."
           pytest idtap/tests/ -m "not integration"
           
       - name: Configure git
-        if: steps.release-check.outputs.should_release == 'true'
+        if: steps.release-check.outputs.mode == 'release'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
       - name: Bump version
-        if: steps.release-check.outputs.should_release == 'true'
+        if: steps.release-check.outputs.mode == 'release'
         id: bump-version
         run: |
           echo "Bumping patch version..."
@@ -101,7 +112,7 @@ jobs:
           echo "Version bumped to: $NEW_VERSION"
           
       - name: Build package
-        if: steps.release-check.outputs.should_release == 'true'
+        if: steps.release-check.outputs.mode != 'skip'
         run: |
           echo "Building package..."
           python -m build
@@ -112,7 +123,7 @@ jobs:
         # protected (require-PR), so a direct push is rejected — land the bump
         # through an auto-merged PR instead (0 approvals required; pushes made
         # with GITHUB_TOKEN don't re-trigger this workflow, so no loop).
-        if: steps.release-check.outputs.should_release == 'true'
+        if: steps.release-check.outputs.mode == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -129,15 +140,37 @@ jobs:
           git push origin "v${{ steps.bump-version.outputs.new_version }}"
 
       - name: Publish to PyPI
-        if: steps.release-check.outputs.should_release == 'true'
+        if: steps.release-check.outputs.mode != 'skip'
+        id: publish
+        # Tolerate one transient failure (e.g. OIDC 503) — retried below.
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           # Using trusted publishing - no username/password needed
           # PyPI trusted publisher must be configured for this repo
           print-hash: true
-          
-      - name: Output release info
-        if: steps.release-check.outputs.should_release == 'true'
+          # In publish-only recovery mode the version may already be up
+          skip-existing: ${{ steps.release-check.outputs.mode == 'publish-only' }}
+
+      - name: Wait before publish retry
+        if: steps.release-check.outputs.mode != 'skip' && steps.publish.outcome == 'failure'
         run: |
-          echo "🚀 Released version: ${{ steps.bump-version.outputs.new_version }}"
-          echo "📦 Package published to PyPI: https://pypi.org/project/idtap/${{ steps.bump-version.outputs.new_version }}/"
+          echo "⚠️ First publish attempt failed; retrying in 60s..."
+          sleep 60
+
+      - name: Publish to PyPI (retry)
+        if: steps.release-check.outputs.mode != 'skip' && steps.publish.outcome == 'failure'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+          skip-existing: ${{ steps.release-check.outputs.mode == 'publish-only' }}
+
+      - name: Output release info
+        if: steps.release-check.outputs.mode != 'skip'
+        run: |
+          VERSION="${{ steps.bump-version.outputs.new_version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ steps.release-check.outputs.current_version }}"
+          fi
+          echo "🚀 Released version: $VERSION"
+          echo "📦 Package published to PyPI: https://pypi.org/project/idtap/$VERSION/"
