@@ -18,6 +18,11 @@ from .classes.phrase import Phrase
 from .classes.pitch import Pitch
 from .classes.raga import Raga
 from .classes.section import Section
+from .classes.simple_trajectory import (
+    OrientationDot,
+    SimpleTrajectory,
+    decompose_trajectory,
+)
 from .classes.trajectory import Trajectory
 
 from .enums import Instrument
@@ -72,6 +77,9 @@ __all__ = [
     "Pitch",
     "Raga",
     "Section",
+    "SimpleTrajectory",
+    "OrientationDot",
+    "decompose_trajectory",
     "Trajectory",
     "Instrument",
     "login_google",
