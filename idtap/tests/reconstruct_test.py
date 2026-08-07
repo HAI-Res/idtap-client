@@ -254,3 +254,43 @@ def test_raga_by_name_without_client_falls_back():
                             synthetic=True, fundamental=240.0)
     assert rec.raga.name == 'Yaman'
     assert rec.raga.fundamental == pytest.approx(240.0)
+
+
+# ------------------------------------------------------- real transcription
+
+def test_real_piece_vocal_track_round_trip():
+    import json
+    import os
+    fixture = os.path.join(os.path.dirname(__file__), 'fixtures',
+                           'serialization_test.json')
+    with open(fixture) as f:
+        piece = Piece.from_json(json.load(f))
+
+    orig = piece.all_trajectories(0, 0)
+    chunks = piece.simplified_trajectories(0, 0)
+    rec = reconstruct_piece(chunks, piece.raga, piece.instrumentation[0],
+                            synthetic=True)
+    out = rec.all_trajectories()
+
+    assert len(rec.phrases) == 1
+    assert [t.id for t in out] == [6 if t.id == 13 else t.id for t in orig]
+    assert rec.dur_tot == pytest.approx(sum(t.dur_tot for t in orig))
+    for a, b in zip(orig, out):
+        assert b.dur_tot == pytest.approx(a.dur_tot)
+
+    starts = rec.traj_start_times()
+    for c in chunks:
+        if c.type == 'silent':
+            continue
+        for x in (0.25, 0.5, 0.75):
+            t = c.start.time + x * c.dur_tot
+            for traj, s in zip(out, starts):
+                if traj.id != 12 and s <= t <= s + traj.dur_tot:
+                    rel = (t - s) / traj.dur_tot
+                    assert traj.compute(rel) == pytest.approx(
+                        c.compute(x), rel=1e-9)
+                    break
+
+    # reconstructed piece must survive serialization
+    rt = Piece.from_json(rec.to_json())
+    assert len(rt.all_trajectories()) == len(out)
