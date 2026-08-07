@@ -178,6 +178,15 @@ def test_tiny_gap_is_absorbed():
     assert [t.id for t in rec.all_trajectories()] == [0, 0]
 
 
+def test_overlapping_chunks_raise():
+    chunks = [
+        chunk('fixed', 0.0, 1.0),
+        chunk('fixed', 0.8, 2.0),
+    ]
+    with pytest.raises(ValueError, match="[Oo]verlap"):
+        reconstruct_piece(chunks, Raga(), Instrument.Vocal_M, synthetic=True)
+
+
 def test_zero_duration_chunks_are_dropped():
     chunks = [
         chunk('fixed', 0.0, 1.0),

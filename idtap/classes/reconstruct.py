@@ -33,6 +33,9 @@ Design constraints (see project notes):
   chunk in sequence). Trajectories are placed sequentially; gaps between
   groups larger than ``GAP_EPSILON`` become silent trajectories, and the piece
   starts at the first chunk's start time (any leading offset is dropped).
+  Overlapping chunk times are the one malformation that raises instead of
+  being absorbed: an overlap is ambiguous (which gesture owns the span?), and
+  resolving it is a manual decision, never a silent one.
 - Everything goes into a single phrase. Phrase segmentation is an analyst's
   job for now.
 - Audio provenance must be declared explicitly: exactly one of ``audio_id``
@@ -121,8 +124,6 @@ def _trajs_from_group(
         return [_primitive_traj(group[0], raga, inst)]
 
     types = [c.type for c in group]
-    dur_tot = sum(c.dur_tot for c in group)
-    dur_array = [c.dur_tot / dur_tot for c in group]
 
     if types == ['sloped-start', 'cosine']:
         traj_id, slope = 4, group[0].slope
@@ -131,14 +132,17 @@ def _trajs_from_group(
     elif all(t == 'cosine' for t in types):
         traj_id, slope = 6, None
     else:
+        # relative timing survives the split: each primitive carries its own
+        # dur_tot, so no group-level dur_array is needed
         return [_primitive_traj(c, raga, inst) for c in group]
 
+    dur_tot = sum(c.dur_tot for c in group)
     log_freqs = [group[0].start.log_freq] + [c.end.log_freq for c in group]
     options = {
         'id': traj_id,
         'pitches': [raga.pitch_from_log_freq(lf) for lf in log_freqs],
         'dur_tot': dur_tot,
-        'dur_array': dur_array,
+        'dur_array': [c.dur_tot / dur_tot for c in group],
         'instrumentation': inst,
     }
     if slope is not None:
@@ -218,7 +222,9 @@ def reconstruct_piece(
             client.get_audio_recording(audio_id)
         except Exception as exc:
             raise ValueError(
-                f"audio_id {audio_id!r} could not be found in the archive: {exc}"
+                f"audio_id {audio_id!r} could not be verified against the "
+                f"archive (missing recording, or a network/auth failure — "
+                f"see chained exception): {exc}"
             ) from exc
 
     if isinstance(raga, str):
@@ -232,6 +238,14 @@ def reconstruct_piece(
     for group in _group_chunks(chunks):
         if prev_end is not None:
             gap = group[0].start.time - prev_end
+            if gap < -GAP_EPSILON:
+                raise ValueError(
+                    f"overlapping chunks: a chunk starting at "
+                    f"{group[0].start.time}s begins {-gap:.6f}s before the "
+                    f"previous chunk ends ({prev_end}s). Overlaps cannot be "
+                    f"reconstructed automatically — fix the chunk times and "
+                    f"decide which gesture owns the overlapping span."
+                )
             if gap > GAP_EPSILON:
                 trajs.append(_silent_traj(gap, raga, inst))
         trajs.extend(_trajs_from_group(group, raga, inst))
