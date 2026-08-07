@@ -18,6 +18,7 @@ from .classes.phrase import Phrase
 from .classes.pitch import Pitch
 from .classes.raga import Raga
 from .classes.section import Section
+from .classes.reconstruct import reconstruct_piece
 from .classes.simple_trajectory import (
     OrientationDot,
     SimpleTrajectory,
@@ -78,6 +79,7 @@ __all__ = [
     "Raga",
     "Section",
     "SimpleTrajectory",
+    "reconstruct_piece",
     "OrientationDot",
     "decompose_trajectory",
     "Trajectory",
