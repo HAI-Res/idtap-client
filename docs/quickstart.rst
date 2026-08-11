@@ -192,4 +192,4 @@ Next Steps
 * Read the :doc:`user-guide` for detailed workflows
 * Explore the :doc:`api/index` for complete API reference  
 * Check out :doc:`examples/index` for real-world use cases
-* Visit the `GitHub repository <https://github.com/UCSC-IDTAP/Python-API>`_ for source code
+* Visit the `GitHub repository <https://github.com/HAI-Res/idtap-client>`_ for source code

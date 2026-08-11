@@ -35,14 +35,14 @@ To install the latest development version from GitHub:
 
 .. code-block:: bash
 
-   pip install git+https://github.com/UCSC-IDTAP/Python-API.git
+   pip install git+https://github.com/HAI-Res/idtap-client.git
 
 Or clone the repository and install locally:
 
 .. code-block:: bash
 
-   git clone https://github.com/UCSC-IDTAP/Python-API.git
-   cd Python-API
+   git clone https://github.com/HAI-Res/idtap-client.git
+   cd idtap-client
    pip install -e .
 
 Development Installation
