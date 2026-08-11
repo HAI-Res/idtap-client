@@ -164,6 +164,8 @@ def plot_melodic_contour(
     line_width: float = 1.0,
     ref_line_alpha: float = 0.3,
     title: Optional[str] = None,
+    show_consonants: bool = False,
+    consonant_size: float = 20.0,
 ) -> 'Figure':
     """Plot a melodic contour from a sequence of trajectories.
 
@@ -182,6 +184,14 @@ def plot_melodic_contour(
         line_width: Width of the contour line.
         ref_line_alpha: Alpha of raga reference lines.
         title: Optional plot title.
+        show_consonants: If *True*, mark consonant articulations with a
+            filled diamond on the curve, as the web app's transcription
+            renderer does (renderConsonantSymbols() in
+            TranscriptionLayer.vue): one at the trajectory start for an
+            articulation at '0.00', one at the end for '1.00'.  Drawn with
+            matplotlib's thin-diamond marker, whose taller-than-wide
+            proportions match d3.symbolDiamond's tan(30°) rhombus.
+        consonant_size: Marker area of the diamonds in points².
 
     Returns:
         The matplotlib Figure containing the plot.
@@ -206,6 +216,18 @@ def plot_melodic_contour(
         times = t0 + xs * traj.dur_tot
         log_freqs = [traj.compute(float(x), log_scale=True) for x in xs]
         ax.plot(times, log_freqs, color=line_color, linewidth=line_width)  # type: ignore[union-attr]
+
+        if show_consonants:
+            for key, norm_x in (('0.00', 0.0), ('1.00', 1.0)):
+                art = traj.articulations.get(key)
+                if art is None or art.name != 'consonant':
+                    continue
+                ax.scatter(  # type: ignore[union-attr]
+                    [t0 + norm_x * traj.dur_tot],
+                    [traj.compute(norm_x, log_scale=True)],
+                    marker='d', s=consonant_size, color=line_color,
+                    zorder=3, linewidths=0,
+                )
 
     # Raga reference lines
     if raga is not None:
@@ -252,6 +274,7 @@ def plot_pitch_prevalence(
     segmentation: str = 'section',
     output_type: str = 'pitchNumber',
     pitch_representation: str = 'fixed_pitch',
+    section_types: Optional[List[str]] = None,
     condensed: bool = False,
     heatmap: bool = False,
     segment_duration: float = 10,
@@ -282,6 +305,10 @@ def plot_pitch_prevalence(
         segmentation: ``'section'``, ``'phrase'``, or ``'duration'``.
         output_type: ``'pitchNumber'`` or ``'chroma'``.
         pitch_representation: ``'fixed_pitch'`` or ``'pitch_onsets'``.
+        section_types: Only show sections whose Top Level categorization is
+            in this list (e.g. ``['Improvisation']``), keeping their original
+            section numbers — the web app's per-type checkboxes.  Only
+            meaningful with ``segmentation='section'``.  *None* shows all.
         condensed: Show only pitches that appear in data (fewer rows).
         heatmap: Use white-to-black gradient coloring.
         segment_duration: Seconds per segment when ``segmentation='duration'``.
@@ -411,6 +438,11 @@ def plot_pitch_prevalence(
     else:
         raise ValueError(f'Unknown segmentation: {segmentation}')
 
+    if section_types is not None and segmentation == 'section':
+        keep = [i for i, m in enumerate(seg_meta) if m['type'] in section_types]
+        segments = [segments[i] for i in keep]
+        seg_meta = [seg_meta[i] for i in keep]
+
     n_seg = len(segments)
     if n_seg == 0:
         fig, ax = plt.subplots(figsize=figsize or (10, 6))
@@ -468,7 +500,20 @@ def plot_pitch_prevalence(
     # ------------------------------------------------------------------ #
     # 4. Sargam labels + octave grouping                                  #
     # ------------------------------------------------------------------ #
-    sargam_labels = [_pitch_sargam_label(p) for p in pitch_rows_display]
+    # Web-app parity: the y axis only labels the raga's own pitches
+    # (raga.getPitchNumbers), leaving non-raga chromatic rows as unlabeled
+    # space at their correct offsets. Fall back to chromatic labels when the
+    # piece has no usable raga.
+    sargam_labels: List[str]
+    try:
+        raga_pns = set(piece.raga.get_pitch_numbers(lo, hi))
+        sargam_labels = [
+            (piece.raga.pitch_number_to_sargam_letter(p) or '')
+            if p in raga_pns else ''
+            for p in pitch_rows_display
+        ]
+    except Exception:
+        sargam_labels = [_pitch_sargam_label(p) for p in pitch_rows_display]
 
     # Octave groups (for pitchNumber mode, non-chroma)
     # Always group by semitone octave (// 12) regardless of condensed mode,
@@ -483,7 +528,9 @@ def plot_pitch_prevalence(
     # 5. Header layout                                                    #
     # ------------------------------------------------------------------ #
     if segmentation == 'section':
-        header_row_labels = ['Section #', 'Start', 'Duration', 'Sec. Type']
+        # Bottom (closest to pitch grid) → top, matching the web app's layout
+        # ('Sec. Type' hugs the grid, 'Section #' is the top row).
+        header_row_labels = ['Sec. Type', 'Duration', 'Start', 'Section #']
     elif segmentation == 'phrase':
         # Bottom (closest to pitch grid) → top; spanning rows at top
         header_row_labels = [
@@ -708,6 +755,18 @@ def plot_pitch_prevalence(
                         ha='center', va='center',
                         fontsize=font_cell, color=text_color)
 
+        # Web-app parity: the segment's whole pitch-range block is outlined in
+        # black (sectionRects get stroke 'black' in PitchPrevalence.vue, in
+        # both standard and heatmap modes -- only pitch-chroma mode skips it).
+        if (output_type != 'chroma'
+                and seg_lo in pitch_rows and seg_hi in pitch_rows):
+            block_bottom = pitch_rows.index(seg_lo) * cell_h
+            block_top = (pitch_rows.index(seg_hi) + 1) * cell_h
+            ax.add_patch(Rectangle(
+                (ci * cell_w, block_bottom), cell_w, block_top - block_bottom,
+                facecolor='none', edgecolor='black', linewidth=0.8, zorder=3,
+            ))
+
     # ------------------------------------------------------------------ #
     # 9. Y-axis labels: sargam letters                                    #
     # ------------------------------------------------------------------ #
@@ -785,15 +844,11 @@ def plot_pitch_prevalence(
     # ------------------------------------------------------------------ #
     # 12. Titles and subtitles                                            #
     # ------------------------------------------------------------------ #
+    # Web-app parity: title and subtitle sit in boxed rows spanning the full
+    # table width (including the row-label column), stacked directly on the
+    # header block, like the wideLines rows in PitchPrevalence.vue.
     top_y = n_rows * cell_h + header_height
 
-    # Piece title
-    piece_title = title or getattr(piece, 'title', '')
-    if piece_title:
-        ax.text(n_seg * cell_w / 2, top_y + 1.0, piece_title,
-                ha='center', va='bottom', fontsize=11, fontweight='bold')
-
-    # Subtitle
     pr_label = 'Fixed Pitch' if pitch_representation == 'fixed_pitch' else 'Pitch Onsets'
     if segmentation == 'section':
         subtitle = f'Pitch Range and Percentage of Duration on each {pr_label}, Segmented by Section'
@@ -802,8 +857,21 @@ def plot_pitch_prevalence(
     else:
         subtitle = (f'Pitch Range and Percentage of Duration on each {pr_label}, '
                      f'Segmented into {segment_duration:.0f}s Windows')
-    ax.text(n_seg * cell_w / 2, top_y + 0.4, subtitle,
-            ha='center', va='bottom', fontsize=7, style='italic')
+
+    piece_title = title or getattr(piece, 'title', '')
+    title_rows = [subtitle] + ([piece_title] if piece_title else [])
+    band_x = -left_margin
+    band_w = left_margin + n_seg * cell_w
+    band_h = cell_h * 1.2
+    for bi, band_text in enumerate(title_rows):
+        by = top_y + bi * band_h
+        ax.add_patch(Rectangle(
+            (band_x, by), band_w, band_h,
+            facecolor='white', edgecolor='black', linewidth=0.8, zorder=10,
+        ))
+        ax.text(band_x + band_w / 2, by + band_h / 2, band_text,
+                ha='center', va='center', zorder=11,
+                fontsize=8 if bi == 0 else 9, fontweight='bold')
 
     fig.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.02)
     return fig
