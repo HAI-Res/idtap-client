@@ -936,6 +936,37 @@ class Piece:
         return chunks
 
     # ------------------------------------------------------------------
+    def synthesize(self, out: Optional[str] = None,
+                   tracks: Optional[List[int]] = None,
+                   sr: int = 44100,
+                   control_rate: float = 200.0,
+                   uniform_vowel: bool = False,
+                   track_gains: Optional[List[float]] = None):
+        """Render this transcription to audio using the offline synthesis
+        engines (Karplus-Strong sitar + chikari, filter-feedback sarangi,
+        Klatt voice).
+
+        Args:
+            out: optional path; if given, a 16-bit PCM WAV file is written.
+            tracks: instrument track indices to render (default: all).
+            sr: output sample rate in Hz.
+            control_rate: control-signal rate in Hz (default 200).
+            uniform_vowel: render all vocal trajectories with the vowel 'a'.
+            track_gains: optional per-track linear gains applied after
+                per-track normalization.
+
+        Returns:
+            numpy array of mono float samples in [-1, 1].
+
+        Note: install numba for fast rendering (pip install idtap[synth]).
+        """
+        from ..synthesis import synthesize_piece
+        return synthesize_piece(self, out=out, tracks=tracks, sr=sr,
+                                control_rate=control_rate,
+                                uniform_vowel=uniform_vowel,
+                                track_gains=track_gains)
+
+    # ------------------------------------------------------------------
     def track_from_traj(self, traj: Trajectory) -> int:
         for i in range(len(self.instrumentation)):
             if traj in self.all_trajectories(i):
