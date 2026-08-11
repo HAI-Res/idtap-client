@@ -158,8 +158,8 @@ semantic-release version --print --no-commit --no-tag --no-push --no-vcs-release
 - `TESTPYPI_API_TOKEN` - For PR testing uploads
 
 **PyPI Trusted Publisher** (configured):
-- Owner: `UCSC-IDTAP`  
-- Repository: `Python-API`
+- Owner: `HAI-Res`  
+- Repository: `idtap-client`
 - Workflow: `release.yml`
 - Uses OIDC - no API tokens needed for production PyPI
 

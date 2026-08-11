@@ -293,7 +293,7 @@ python api_testing/api_test.py
 ## Platform Access
 
 - **IDTAP Web Platform**: [swara.studio](https://swara.studio)
-- **Source Code**: [github.com/jon-myers/idtap](https://github.com/jon-myers/idtap)
+- **Source Code**: [github.com/HAI-Res/idtap-platform](https://github.com/HAI-Res/idtap-platform)
 - **Research Paper**: "Beyond Notation: A Digital Platform for Transcribing and Analyzing Oral Melodic Traditions" (ISMIR 2025)
 
 ## Documentation
@@ -308,7 +308,7 @@ python api_testing/api_test.py
 
 ## Support
 
-- **GitHub Issues**: [Report bugs and request features](https://github.com/UCSC-IDTAP/Python-API/issues)
+- **GitHub Issues**: [Report bugs and request features](https://github.com/HAI-Res/idtap-client/issues)
 - **Research Contact**: Jonathan Myers & Dard Neuman, UC Santa Cruz
 - **Platform**: [swara.studio](https://swara.studio)
 

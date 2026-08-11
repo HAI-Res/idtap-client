@@ -70,9 +70,9 @@ linux = [
 
 [project.urls]
 Homepage = "https://swara.studio"
-Documentation = "https://github.com/UCSC-IDTAP/Python-API"
-Repository = "https://github.com/UCSC-IDTAP/Python-API"
-"Bug Tracker" = "https://github.com/UCSC-IDTAP/Python-API/issues"
+Documentation = "https://github.com/HAI-Res/idtap-client"
+Repository = "https://github.com/HAI-Res/idtap-client"
+"Bug Tracker" = "https://github.com/HAI-Res/idtap-client/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -14,7 +14,7 @@ Real-world examples of using the IDTAP API for common tasks.
 Code Examples
 -------------
 
-All examples are available in the `examples/ directory <https://github.com/UCSC-IDTAP/Python-API/tree/main/examples>`_ of the GitHub repository.
+All examples are available in the `examples/ directory <https://github.com/HAI-Res/idtap-client/tree/main/examples>`_ of the GitHub repository.
 
 Common Patterns
 ---------------
@@ -84,4 +84,4 @@ Next Steps
 
 * Browse the detailed examples in the sections above
 * Check the :doc:`../api/index` for complete API reference
-* Visit the `GitHub repository <https://github.com/UCSC-IDTAP/Python-API>`_ for more examples
+* Visit the `GitHub repository <https://github.com/HAI-Res/idtap-client>`_ for more examples
