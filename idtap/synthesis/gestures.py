@@ -51,6 +51,18 @@ VOICED_FRICATIVE_DB = -8.0
 # Extra breathiness for the breathy-voiced (ʱ) release.
 BREATHY_ASPIRATION_DB = -12.0
 
+# --- glottal /h/ -----------------------------------------------------------
+# Voicing is reduced, not cut: a fully devoiced /h/ breaks the sung line.
+H_VOICING_DB = -8.0
+# F1 bandwidth during /h/. The open glottis couples the subglottal system and
+# heavily damps F1 — Klatt (1980) widens B1 to about this for aspiration.
+H_B1_HZ = 300.0
+# Duration of the breathy onset before, and after, the vowel onset.
+H_PRE_DUR = 0.040
+H_POST_DUR = 0.045
+# Aspiration level the voice rests at outside a gesture (render.py default).
+KLATT_ASPIRATION_REST_DB = -25.0
+
 # Parallel formant slot used for burst / frication resonance.
 FRICATION_SLOT = 5
 
@@ -102,6 +114,20 @@ def _noise_tilt_comp_db(freq: float, sr: float) -> float:
 
 # Fraction of a preceding trajectory an onset closure may consume.
 MAX_PREV_ENCROACH = 0.5
+
+# Shortest window the formants may take to approach a consonant's locus.
+# The articulators move toward a constriction over a longer span than the
+# constriction itself lasts — a tap's closure is ~20 ms, only four control
+# frames, and gliding the formants that fast is heard as a click rather than
+# as a consonant. The approach may therefore start before the closure does.
+MIN_APPROACH_DUR = 0.045
+
+# Time the velum takes to close after a nasal, over which nasal coupling
+# is faded out rather than switched off.
+DENASAL_DUR = 0.035
+
+# Depth of the amplitude dip at a tap's contact.
+TAP_DIP_DB = -13.0
 
 
 def _frames(t0: float, t1: float, rate: float, nf: int) -> Tuple[int, int]:
@@ -157,6 +183,34 @@ def _set_frication(extra: np.ndarray, par_db: np.ndarray,
     extra[kernels.ROW_PAR_BYPASS_DB, k0:k1] = spec.bypass_db + trim_db
 
 
+def _glide_range(arr: np.ndarray, k0: int, k1: int, start: float,
+                 end: float) -> None:
+    """Linearly ramp ``arr`` from ``start`` at k0 to ``end`` at k1."""
+    if k1 <= k0:
+        return
+    span = k1 - k0
+    for k in range(k0, k1):
+        arr[k] = start + (end - start) * ((k - k0 + 1) / span)
+
+
+def _approach_locus(formants: np.ndarray, k0: int, k1: int,
+                    locus: Tuple[float, float, float]) -> None:
+    """Glide F1-F3 from wherever they were into the consonant's locus.
+
+    Stepping straight to the locus puts a discontinuity in the formant
+    tracks; when the closure is voiced (an approximant, a nasal murmur, a
+    voiced stop's voice bar) that step is audible as a click. Approaching
+    the locus over the closure is also what the articulators actually do.
+    """
+    if k1 <= k0 or k0 <= 0:
+        if k1 > k0:
+            for j in range(3):
+                _fill(formants[j], k0, k1, locus[j])
+        return
+    for j in range(3):
+        _glide_range(formants[j], k0, k1, formants[j, k0 - 1], locus[j])
+
+
 def _glide_formants(formants: np.ndarray, bws: np.ndarray,
                     k0: int, k1: int,
                     locus: Tuple[float, float, float],
@@ -184,19 +238,37 @@ def _apply_onset(spec: ConsonantSpec, span: Span, prev: Optional[Span],
     release = span.start
     span_len = span.end - span.start
 
+    # /h/ is a glottal fricative: no oral constriction (no locus) and no
+    # noise resonance of its own (no burst formant) — it borrows the
+    # following vowel's tract shape entirely.
+    is_glottal_h = (spec.manner == 'fricative' and spec.locus is None
+                    and spec.burst_formant is None)
+
     # The closure sits before the release. If the previous trajectory runs
     # right up to this one, the closure interrupts it (as a consonant does
     # in speech) — but never consume more than MAX_PREV_ENCROACH of it.
     closure_dur = spec.closure_dur
+    asp_dur = spec.aspiration_dur
+    if is_glottal_h:
+        # no silent gap to hide behind, so a long /h/ just sounds like a
+        # patch of noise stuck onto the note; keep the whole gesture brief
+        # and weighted before the vowel onset
+        closure_dur = min(closure_dur, H_PRE_DUR)
+        asp_dur = min(asp_dur, H_POST_DUR)
+    # The formants approach the locus over a window that may start earlier
+    # than the closure, so short constrictions still glide rather than jump.
+    approach_dur = max(closure_dur, spec.transition_dur, MIN_APPROACH_DUR)
     if prev is not None and prev.end > release - closure_dur:
         available = MAX_PREV_ENCROACH * max(release - prev.start, 0.0)
         closure_dur = min(closure_dur, available)
+        approach_dur = min(approach_dur, available)
     closure_start = max(release - closure_dur, 0.0)
+    approach_start = max(release - approach_dur, 0.0)
 
     # Post-release phases are clamped so they never exceed the trajectory.
     burst_dur = spec.burst_dur
-    asp_dur = spec.aspiration_dur
-    trans_dur = spec.transition_dur
+    # the formants leave the locus no faster than they approached it
+    trans_dur = max(spec.transition_dur, MIN_APPROACH_DUR)
     post = burst_dur + asp_dur + trans_dur
     if post > span_len * 0.9 and post > 0:
         scale = (span_len * 0.9) / post
@@ -209,6 +281,7 @@ def _apply_onset(spec: ConsonantSpec, span: Span, prev: Optional[Span],
     t_trans_end = t_asp_end + trans_dur
 
     k_clo, k_rel = _frames(closure_start, release, rate, nf)
+    k_app, _ = _frames(approach_start, release, rate, nf)
     _, k_burst = _frames(release, t_burst_end, rate, nf)
     _, k_asp = _frames(t_burst_end, t_asp_end, rate, nf)
     _, k_trans = _frames(t_asp_end, t_trans_end, rate, nf)
@@ -225,29 +298,61 @@ def _apply_onset(spec: ConsonantSpec, span: Span, prev: Optional[Span],
                 f0[k] = f0_at_start
 
     # ---- closure ---------------------------------------------------------
-    _silence_sources(extra, k_clo, k_rel)
-    if spec.locus is not None:
-        for j in range(3):
-            _fill(formants[j], k_clo, k_rel, spec.locus[j])
-    if spec.manner == 'nasal' and spec.nasal_murmur is not None:
-        _set_nasal(extra, k_clo, k_rel, spec.nasal_murmur)
-        _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
-              NASAL_MURMUR_DB)
-    elif spec.manner in ('fricative', 'affricate') and spec.burst_dur == 0:
-        # a true fricative: constriction noise runs through the closure
-        _set_frication(extra, par_db, formants, bws, k_clo, k_rel, spec, sr)
-        if spec.voiced:
-            _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
-                  VOICED_FRICATIVE_DB)
-    elif spec.manner in ('stop', 'affricate'):
-        _fill(formants[0], k_clo, k_rel, CLOSURE_F1)
-        _fill(bws[0], k_clo, k_rel, CLOSURE_F1_BW)
-        if spec.voice_bar:
-            _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
-                  VOICE_BAR_DB)
+    if is_glottal_h:
+        # /h/ has no closure at all: the tract already stands in the
+        # following vowel's shape and only the glottal source changes.
+        # Klatt's recipe is to keep the vowel's formants, widen B1 (the open
+        # glottis couples the subglottal system and damps F1), and replace
+        # voicing with aspiration. Sung /h/ keeps some voicing rather than
+        # devoicing completely, which reads as breathy rather than as a gap.
+        # ramp in as well as out: switching the breath on in one frame is
+        # itself an audible edge
+        _glide_range(extra[kernels.ROW_CASC_ASPIRATION_DB], k_clo, k_rel,
+                     KLATT_ASPIRATION_REST_DB, spec.aspiration_db)
+        _fill(extra[kernels.ROW_CASC_ASPIRATION_MOD], k_clo, k_rel, 0.0)
+        _glide_range(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
+                     0.0, H_VOICING_DB)
+        _glide_range(bws[0], k_clo, k_rel,
+                     bws[0, k_clo - 1] if k_clo > 0 else H_B1_HZ, H_B1_HZ)
     else:
-        # approximants / laterals / trills: voiced continuant at the locus
-        _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel, 0.0)
+        _silence_sources(extra, k_clo, k_rel)
+        if spec.locus is not None:
+            _approach_locus(formants, k_app, k_rel, spec.locus)
+        if spec.manner == 'nasal' and spec.nasal_murmur is not None:
+            _set_nasal(extra, k_clo, k_rel, spec.nasal_murmur)
+            _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
+                  NASAL_MURMUR_DB)
+        elif spec.manner in ('fricative', 'affricate') and spec.burst_dur == 0:
+            # a true fricative: constriction noise runs through the closure
+            _set_frication(extra, par_db, formants, bws, k_clo, k_rel, spec, sr)
+            if spec.voiced:
+                _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
+                      VOICED_FRICATIVE_DB)
+        elif spec.manner in ('stop', 'affricate'):
+            # F1 falls to the closed-tract resonance; glide it for a voiced
+            # closure so the voice bar does not start with a step
+            if spec.voice_bar and k_clo > 0:
+                _glide_range(formants[0], k_clo, k_rel,
+                             formants[0, k_clo - 1], CLOSURE_F1)
+            else:
+                _fill(formants[0], k_clo, k_rel, CLOSURE_F1)
+            _fill(bws[0], k_clo, k_rel, CLOSURE_F1_BW)
+            if spec.voice_bar:
+                _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel,
+                      VOICE_BAR_DB)
+        elif spec.manner == 'trill':
+            # Hindi /r/ is a tap: the tongue briefly touches the ridge, so
+            # the note dips in amplitude. Without that dip the gesture is
+            # only a fast formant swing, which reads as a click rather than
+            # as a consonant. Ramp down and back up around the contact.
+            mid = (k_clo + k_rel) // 2
+            _glide_range(extra[kernels.ROW_CASC_VOICING_DB], k_clo, mid,
+                         0.0, TAP_DIP_DB)
+            _glide_range(extra[kernels.ROW_CASC_VOICING_DB], mid, k_rel,
+                         TAP_DIP_DB, 0.0)
+        else:
+            # approximants / laterals: voiced continuant at the locus
+            _fill(extra[kernels.ROW_CASC_VOICING_DB], k_clo, k_rel, 0.0)
 
     # ---- release burst ---------------------------------------------------
     if k_burst > k_rel:
@@ -265,7 +370,12 @@ def _apply_onset(spec: ConsonantSpec, span: Span, prev: Optional[Span],
         _fill(extra[kernels.ROW_CASC_ASPIRATION_DB], k_burst, k_asp,
               spec.aspiration_db)
         _fill(extra[kernels.ROW_CASC_ASPIRATION_MOD], k_burst, k_asp, 0.0)
-        if not spec.voiced:
+        if is_glottal_h:
+            # stay breathy rather than devoicing, and keep F1 damped
+            _fill(extra[kernels.ROW_CASC_VOICING_DB], k_burst, k_asp,
+                  H_VOICING_DB)
+            _fill(bws[0], k_burst, k_asp, H_B1_HZ)
+        elif not spec.voiced:
             _fill(extra[kernels.ROW_CASC_VOICING_DB], k_burst, k_asp,
                   kernels.OFF_DB)
         elif spec.breathy_offset:
@@ -275,6 +385,29 @@ def _apply_onset(spec: ConsonantSpec, span: Span, prev: Optional[Span],
     # ---- formant transition to the vowel ---------------------------------
     if spec.locus is not None and k_trans > k_burst:
         _glide_formants(formants, bws, k_burst, k_trans, spec.locus, k_trans)
+    # Denasalize gradually. The velum closes over a few tens of ms, so
+    # cutting the nasal filters off in one frame leaves a spectral step at
+    # the release. Sliding the antiformant onto the nasal formant cancels
+    # the pair smoothly, after which both can be switched off.
+    if (spec.manner == 'nasal' and spec.nasal_murmur is not None
+            and k_trans > k_rel):
+        nf_freq, nf_bw, af_freq, af_bw = spec.nasal_murmur
+        k_den = min(k_rel + max(int(DENASAL_DUR * rate), 1), k_trans)
+        _fill(extra[kernels.ROW_NASAL_FORMANT_FREQ], k_rel, k_den, nf_freq)
+        _fill(extra[kernels.ROW_NASAL_FORMANT_BW], k_rel, k_den, nf_bw)
+        _fill(extra[kernels.ROW_NASAL_ANTIFORMANT_BW], k_rel, k_den, af_bw)
+        _glide_range(extra[kernels.ROW_NASAL_ANTIFORMANT_FREQ], k_rel, k_den,
+                     af_freq, nf_freq)
+
+    if is_glottal_h and k_trans > k_asp:
+        # breathiness and the damped F1 resolve gradually into the vowel;
+        # switching them off in one frame is what makes /h/ sound stuck on
+        _glide_range(extra[kernels.ROW_CASC_ASPIRATION_DB], k_asp, k_trans,
+                     spec.aspiration_db, KLATT_ASPIRATION_REST_DB)
+        _glide_range(extra[kernels.ROW_CASC_VOICING_DB], k_asp, k_trans,
+                     H_VOICING_DB, 0.0)
+        _glide_range(bws[0], k_asp, k_trans, H_B1_HZ,
+                     bws[0, min(k_trans, bws.shape[1] - 1)])
     if spec.breathy_offset and k_trans > k_asp:
         # breathy voice continues a little into the vowel
         _fill(extra[kernels.ROW_CASC_ASPIRATION_DB], k_asp, k_trans,
