@@ -8,8 +8,10 @@ recording and Praat's Burg LPC tracker (via Parselmouth) reads the
 formants out of each labelled vowel.
 
 Measure the *isolated vocal stem*, not the raw recording — a tanpura drone
-or sarangi in the signal will pull the tracker badly. See
-``idtap.synthesis.formants.SEPARATION_NOTE``.
+or sarangi in the signal will pull the tracker badly — and separate it with
+a general-purpose vocal model rather than a karaoke one. See
+``idtap.synthesis.formants.SEPARATION_NOTE``, and check
+``VowelSpace.coverage`` on every result.
 
 Typical use::
 
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import json
 import statistics
+import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -33,9 +36,13 @@ from .vowels import DEFAULT_B, DEFAULT_F, VOWELS, vowel_targets
 
 SEPARATION_NOTE = (
     "Formant measurement assumes a vocal stem with the accompaniment "
-    "removed. Run the recording through a vocal separator first (denoise, "
-    "then a karaoke-style separator, which routes sustained drones to the "
-    "accompaniment stem instead of leaking them into the vocal)."
+    "removed: run the recording through a denoiser and a vocal separator "
+    "first. Prefer a general-purpose vocal model over a karaoke/lead-vocal "
+    "one here. Karaoke models are built to send sustained drones to the "
+    "accompaniment stem, which is right for a tanpura but can take a "
+    "Hindustani vocalist's held alap tones with it — on one recording "
+    "tested that left only 29% of the singing in the vocal stem, against "
+    "98% from a general model. Always check VowelSpace.coverage."
 )
 
 # Praat Burg tracker settings. The formant ceiling has to suit the voice:
@@ -58,6 +65,13 @@ MIN_INSTANCES = 50
 # Largest interquartile spread, relative to the median, at which a formant
 # estimate is still taken as a measurement rather than tracker noise.
 MAX_REL_IQR = 0.22
+# Below this fraction of the transcription's vowel time being audible in the
+# stem, the separation is assumed to have failed rather than the singer
+# having been quiet — the transcription says they were singing.
+MIN_COVERAGE = 0.6
+# How far below a stem's loud end (95th percentile intensity) a frame may
+# sit and still count as the singer rather than as residue.
+SIGNAL_RANGE_DB = 25.0
 # Plausibility gates, so octave errors and spurious poles are discarded.
 FORMANT_RANGES = {
     'male': ((200.0, 900.0), (700.0, 2500.0), (1800.0, 3500.0)),
@@ -79,6 +93,9 @@ class VowelSpace:
     source: str = ''
     # vowels that were measured, as opposed to filled from the default table
     measured: Tuple[str, ...] = ()
+    # fraction of the transcription's own vowel time that carried usable
+    # signal in the stem; low values mean the separation lost the singer
+    coverage: float = 1.0
 
     def get(self, vowel: Optional[str]):
         """(f1,f2,f3,b1,b2,b3) for a vowel, or None if not held."""
@@ -92,6 +109,7 @@ class VowelSpace:
     def to_json(self) -> Dict:
         return {'voice': self.voice, 'source': self.source,
                 'counts': self.counts, 'measured': list(self.measured),
+                'coverage': self.coverage,
                 'targets': {k: list(v) for k, v in self.targets.items()}}
 
     def save(self, path: str) -> None:
@@ -107,10 +125,12 @@ class VowelSpace:
             counts=obj.get('counts', {}),
             voice=obj.get('voice', 'male'),
             source=obj.get('source', ''),
-            measured=tuple(obj.get('measured', ())))
+            measured=tuple(obj.get('measured', ())),
+            coverage=obj.get('coverage', 1.0))
 
     def summary(self) -> str:
-        rows = [f"vowel space ({self.voice}) from {self.source or 'unknown'}"]
+        rows = [f"vowel space ({self.voice}) from {self.source or 'unknown'}",
+                f"  stem coverage of transcribed vowel time: {self.coverage:.0%}"]
         for v, t in sorted(self.targets.items(),
                            key=lambda kv: -self.counts.get(kv[0], 0)):
             tag = 'measured' if self.is_measured(v) else 'default '
@@ -194,26 +214,38 @@ def measure_vowel_space(audio_path: str, piece, inst_idx: int = 0,
         pre_emphasis_from=PRE_EMPHASIS)
     intensity = sound.to_intensity(minimum_pitch=75.0)
 
-    # ignore frames that are essentially silent in the stem
+    # Ignore frames that are essentially silent in the stem. The reference
+    # has to be the stem's loud end, not its median: a separation that lost
+    # the singer produces a mostly-silent stem whose median is itself
+    # silence, so a median-relative floor would pass that silence as signal
+    # and report full coverage of a stem containing almost nothing.
     try:
         levels = [intensity.get_value(t) for t in intensity.xs()]
-        levels = [x for x in levels if x is not None and x == x]
-        floor = (statistics.median(levels) - 12.0) if levels else 0.0
+        levels = sorted(x for x in levels if x is not None and x == x)
+        if levels:
+            loud = levels[int(0.95 * (len(levels) - 1))]
+            floor = loud - SIGNAL_RANGE_DB
+        else:
+            floor = 0.0
     except Exception:
         floor = 0.0
 
     lo, mid, hi = FORMANT_RANGES[voice]
     samples: Dict[str, List[Tuple[float, float, float]]] = {}
+    expected = 0
+    audible = 0
     for vowel, t0, t1 in _vowel_intervals(piece, inst_idx, control_rate):
         t = t0
         while t < t1:
             if t > sound.xmax:
                 break
+            expected += 1
             try:
                 level = intensity.get_value(t)
             except Exception:
                 level = None
             if level is not None and level == level and level >= floor:
+                audible += 1
                 f1 = formant.get_value_at_time(1, t)
                 f2 = formant.get_value_at_time(2, t)
                 f3 = formant.get_value_at_time(3, t)
@@ -264,4 +296,14 @@ def measure_vowel_space(audio_path: str, piece, inst_idx: int = 0,
                   f"F1={f1:6.0f} F2={f2:6.0f} F3={f3:6.0f}")
     space.counts = counts
     space.measured = tuple(measured)
+    space.coverage = (audible / expected) if expected else 0.0
+    if space.coverage < MIN_COVERAGE:
+        warnings.warn(
+            f"only {space.coverage:.0%} of this track's transcribed vowel "
+            f"time is audible in {audio_path}. The transcription says the "
+            f"singer was singing, so the separation has probably routed "
+            f"them into the accompaniment stem — a karaoke/lead-vocal model "
+            f"can do this to sustained singing, mistaking it for a drone. "
+            f"Try a general-purpose vocal model before trusting these "
+            f"formants.", RuntimeWarning, stacklevel=2)
     return space
