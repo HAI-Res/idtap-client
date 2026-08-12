@@ -16,11 +16,11 @@ requests-toolbelt = "*"
 pyhumps = "*"
 idtap = "==0.1.34"
 numpy = "*"
+numba = ">=0.59.0"
 pillow = "*"
 matplotlib = "*"
 
 [dev-packages]
-numba = ">=0.59.0"   # Fast offline synthesis (idtap[synth] extra)
 responses = "*"
 black = "*"          # Code formatting
 flake8 = "*"         # Linting

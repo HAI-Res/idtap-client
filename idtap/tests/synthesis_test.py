@@ -51,6 +51,26 @@ def _cents(f: float, ref: float) -> float:
     return 1200.0 * math.log2(f / ref)
 
 
+def _band_energy(seg: np.ndarray, sr: float, lo: float, hi: float) -> float:
+    spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg)))) ** 2
+    freqs = np.fft.rfftfreq(len(seg), 1 / sr)
+    return float(spec[(freqs >= lo) & (freqs <= hi)].sum())
+
+
+def _klatt_ctrl(nf, freqs, bws_):
+    """Formant/bandwidth control arrays for the kernel tests."""
+    formants = np.zeros((6, nf))
+    bandwidths = np.zeros((6, nf))
+    for j, (f, b) in enumerate(zip(freqs, bws_)):
+        formants[j, :] = f
+        bandwidths[j, :] = b
+    return formants, bandwidths
+
+
+VOWEL_F = [620., 1220., 2550., 3168., 4135., 5020.]
+VOWEL_B = [80., 50., 140., 102., 816., 596.]
+
+
 def test_pink_burst_deterministic():
     b1 = kernels.pink_burst(441, 100, 1.0, 42)
     b2 = kernels.pink_burst(441, 100, 1.0, 42)
@@ -96,14 +116,11 @@ def test_klatt_voice_pitch_and_formant():
     nf = int(n / HOP) + 2
     f0 = np.full(nf, 200.0)
     gain = np.full(nf, 1.0)
-    formants = np.zeros((6, nf))
-    bws = np.zeros((6, nf))
-    for j, (f, b) in enumerate(zip([620, 1220, 2550, 3168, 4135, 5020],
-                                   [80, 50, 140, 102, 816, 596])):
-        formants[j, :] = f
-        bws[j, :] = b
-    y = kernels.klatt_voice(f0, gain, formants, bws, n, SR, HOP,
-                            0.0, 0.7, -25.0, 0.0, -25.0, 0.5, 3, 0.0)
+    formants, bws = _klatt_ctrl(nf, VOWEL_F, VOWEL_B)
+    extra = kernels.default_extra_ctrl(nf)
+    par_db = kernels.default_par_formant_db_ctrl(nf)
+    y = kernels.klatt_voice(f0, gain, formants, bws, extra, par_db, n, SR,
+                            HOP, 0.0, 0.7, -25.0, 3, 0.0)
     seg = y[int(SR * 0.5):int(SR * 1.5)]
     # pitch via autocorrelation (flutter disabled above)
     ac = np.correlate(seg, seg, 'full')[len(seg) - 1:]
@@ -126,9 +143,114 @@ def test_klatt_silence_is_silent():
                        (nf, 1)).T.copy()
     bws = np.tile(np.array([76., 102., 72., 102., 816., 596.]),
                   (nf, 1)).T.copy()
-    y = kernels.klatt_voice(f0, gain, formants, bws, n, SR, HOP,
-                            0.15, 0.7, -25.0, 0.0, -25.0, 0.5, 3, 0.0)
+    extra = kernels.default_extra_ctrl(nf)
+    par_db = kernels.default_par_formant_db_ctrl(nf)
+    y = kernels.klatt_voice(f0, gain, formants, bws, extra, par_db, n, SR,
+                            HOP, 0.15, 0.7, -25.0, 3, 0.0)
     assert np.max(np.abs(y)) == 0.0
+
+
+# Reference RMS of the cascade-only kernel (measured before the parallel
+# branch and nasal filters were added). With the neutral defaults the noise
+# draw order is unchanged, so the output is in fact bit-identical; the loose
+# tolerance below only guards against a real change of character.
+KLATT_NEUTRAL_REF_RMS = 0.9851024455231268
+
+
+def test_klatt_neutral_defaults_match_cascade_only_reference():
+    """Neutral (parallel off, no nasals) controls reproduce the old kernel."""
+    n = int(SR * 1.0)
+    nf = int(n / HOP) + 2
+    f0 = np.full(nf, 200.0)
+    gain = np.full(nf, 1.0)
+    formants, bws = _klatt_ctrl(nf, VOWEL_F, VOWEL_B)
+    extra = kernels.default_extra_ctrl(nf)
+    par_db = kernels.default_par_formant_db_ctrl(nf)
+    y = kernels.klatt_voice(f0, gain, formants, bws, extra, par_db, n, SR,
+                            HOP, 0.0, 0.7, -25.0, 3, 0.0)
+    assert np.all(np.isfinite(y))
+    rms = float(np.sqrt(np.mean(y ** 2)))
+    assert rms == pytest.approx(KLATT_NEUTRAL_REF_RMS, rel=0.1)
+    # pitch is still the target f0
+    seg = y[int(SR * 0.25):]
+    ac = np.correlate(seg, seg, 'full')[len(seg) - 1:]
+    lo, hi = int(SR / 400), int(SR / 100)
+    lag = np.argmax(ac[lo:hi]) + lo
+    assert abs(_cents(SR / lag, 200.0)) < 15.0
+
+
+def test_klatt_parallel_frication_formant():
+    """Frication-only segment: noise energy concentrates at parallel F2."""
+    n = int(SR * 1.0)
+    nf = int(n / HOP) + 2
+    f0 = np.full(nf, 200.0)
+    gain = np.full(nf, 1.0)
+    fric_f = 2500.0
+    formants, bws = _klatt_ctrl(
+        nf, [500., fric_f, 3000., 3500., 4500., 5500.],
+        [100., 200., 200., 200., 400., 400.])
+    extra = kernels.default_extra_ctrl(nf)
+    # voicing fully off in both branches
+    extra[kernels.ROW_CASC_VOICING_DB, :] = kernels.OFF_DB
+    extra[kernels.ROW_CASC_ASPIRATION_DB, :] = kernels.OFF_DB
+    extra[kernels.ROW_FRICATION_DB, :] = 0.0
+    extra[kernels.ROW_FRICATION_MOD, :] = 0.5
+    par_db = kernels.default_par_formant_db_ctrl(nf)
+    par_db[1, :] = 0.0  # only parallel F2 is unmuted
+    y = kernels.klatt_voice(f0, gain, formants, bws, extra, par_db, n, SR,
+                            HOP, 0.0, 0.7, kernels.OFF_DB, 5, 0.0)
+    assert np.all(np.isfinite(y))
+    seg = y[int(SR * 0.25):]
+    assert np.sqrt(np.mean(seg ** 2)) > 1e-3
+    peak = _spectral_peak(seg, SR, 1000.0, 5000.0)
+    assert abs(peak - fric_f) < 250.0
+    # energy really is concentrated in the F2 band, compared with equally
+    # wide bands below and above it
+    f2_band = _band_energy(seg, SR, fric_f - 400, fric_f + 400)
+    assert f2_band > 3.0 * _band_energy(seg, SR, 700.0, 1500.0)
+    assert f2_band > 3.0 * _band_energy(seg, SR, 3200.0, 4000.0)
+    # per-period amplitude modulation: the second half of each F0 period is
+    # attenuated by (1 - fricationMod)
+    period = int(round(SR / 200.0))
+    idx = np.arange(seg.shape[0]) % period
+    first = seg[idx < period // 2]
+    second = seg[idx >= period // 2]
+    assert np.sqrt(np.mean(first ** 2)) > 1.3 * np.sqrt(np.mean(second ** 2))
+
+
+def test_klatt_nasal_murmur():
+    """Nasal formant + antiformant put a spectral dip at the antiformant."""
+    n = int(SR * 1.0)
+    nf = int(n / HOP) + 2
+    f0 = np.full(nf, 125.0)
+    gain = np.full(nf, 1.0)
+    formants, bws = _klatt_ctrl(nf, VOWEL_F, VOWEL_B)
+    par_db = kernels.default_par_formant_db_ctrl(nf)
+
+    plain = kernels.default_extra_ctrl(nf)
+    nasal = kernels.default_extra_ctrl(nf)
+    nasal[kernels.ROW_NASAL_FORMANT_FREQ, :] = 270.0
+    nasal[kernels.ROW_NASAL_FORMANT_BW, :] = 100.0
+    nasal[kernels.ROW_NASAL_ANTIFORMANT_FREQ, :] = 800.0
+    nasal[kernels.ROW_NASAL_ANTIFORMANT_BW, :] = 150.0
+
+    def _run(extra):
+        return kernels.klatt_voice(f0, gain, formants, bws, extra, par_db, n,
+                                   SR, HOP, 0.0, 0.7, -25.0, 9, 0.0)
+
+    y_plain = _run(plain)
+    y_nasal = _run(nasal)
+    assert np.all(np.isfinite(y_nasal))
+    assert not np.allclose(y_plain, y_nasal)
+
+    s_plain = y_plain[int(SR * 0.25):]
+    s_nasal = y_nasal[int(SR * 0.25):]
+    # relative energy in a band around the antiformant must drop sharply
+    r_plain = (_band_energy(s_plain, SR, 700, 900)
+               / _band_energy(s_plain, SR, 100, 3000))
+    r_nasal = (_band_energy(s_nasal, SR, 700, 900)
+               / _band_energy(s_nasal, SR, 100, 3000))
+    assert r_nasal < 0.5 * r_plain
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +357,95 @@ def test_synthesize_fixture_piece():
     assert np.all(np.isfinite(mix))
     assert mix.shape[0] > 22050  # at least a second of audio
     assert np.max(np.abs(mix)) > 0.01
+
+
+# ---------------------------------------------------------------------------
+# consonant gestures
+# ---------------------------------------------------------------------------
+
+def _consonant_piece(ipa: str, vowel: str = 'a', lead_silence: float = 0.5,
+                     dur: float = 1.0):
+    """A vocal piece: silence, then one note carrying an onset consonant."""
+    raga = Raga()
+    sil = Trajectory({'id': 12, 'pitches': [Pitch()],
+                      'dur_tot': lead_silence})
+    note = Trajectory({'id': 0, 'pitches': [Pitch()], 'dur_tot': dur,
+                       'vowel': vowel, 'start_consonant': ipa,
+                       'start_consonant_ipa': ipa})
+    phrases = [Phrase({'trajectories': [sil], 'dur_tot': lead_silence,
+                       'raga': raga}),
+               Phrase({'trajectories': [note], 'dur_tot': dur,
+                       'raga': raga})]
+    return Piece({'phrases': phrases, 'raga': raga,
+                  'instrumentation': [Instrument.Vocal_M]})
+
+
+def _phases(ipa: str, lead: float = 0.5):
+    """Render an onset consonant; return (closure, vowel) segments."""
+    piece = _consonant_piece(ipa, lead_silence=lead)
+    sig = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE)
+    rel = int(lead * SR)
+    closure = sig[rel - int(0.04 * SR):rel]
+    vowel = sig[rel + int(0.35 * SR):rel + int(0.85 * SR)]
+    return sig, closure, vowel
+
+
+def test_consonant_annotations_reach_spans():
+    piece = _consonant_piece('m')
+    ctrl = extract_track_control(piece, 0, 0, CONTROL_RATE)
+    spans = [s for s in ctrl.spans if s.start_consonant]
+    assert len(spans) == 1
+    assert spans[0].start_consonant == 'm'
+
+
+@pytest.mark.parametrize("ipa", ['k', 'kʰ', 'ʈ'])
+def test_voiceless_stop_closure_is_silent(ipa):
+    """A voiceless closure must be true silence, not just a gain dip."""
+    _, closure, vowel = _phases(ipa)
+    assert np.max(np.abs(closure)) == 0.0
+    assert np.sqrt(np.mean(vowel ** 2)) > 0.1  # the vowel still sounds
+
+
+def test_nasal_murmur_is_voiced_low_and_below_vowel():
+    _, closure, vowel = _phases('m')
+    c_rms = np.sqrt(np.mean(closure ** 2))
+    v_rms = np.sqrt(np.mean(vowel ** 2))
+    assert c_rms > 0.01                      # murmur is audible
+    assert 0.15 < c_rms / v_rms < 0.75       # but clearly below the vowel
+    # murmur energy is overwhelmingly low-frequency
+    lo = _band_energy(closure, SR, 100, 600)
+    hi = _band_energy(closure, SR, 2500, 9000)
+    assert hi < 0.05 * lo
+
+
+def test_voiced_stop_has_quiet_voice_bar():
+    _, closure, vowel = _phases('g')
+    c_rms = np.sqrt(np.mean(closure ** 2))
+    v_rms = np.sqrt(np.mean(vowel ** 2))
+    assert 0.0 < c_rms < 0.2 * v_rms
+
+
+def test_fricative_constriction_is_high_frequency():
+    _, closure, _ = _phases('ʃ')
+    lo = _band_energy(closure, SR, 100, 600)
+    hi = _band_energy(closure, SR, 2500, 9000)
+    assert hi > lo
+
+
+def test_consonants_flag_disables_gestures():
+    piece = _consonant_piece('k')
+    on = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE,
+                      consonants=True)
+    off = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE,
+                       consonants=False)
+    assert not np.allclose(on, off)
+    # without gestures there is no closure carved out before the note
+    rel = int(0.5 * SR)
+    assert np.max(np.abs(on[rel - int(0.04 * SR):rel])) == 0.0
+
+
+def test_unknown_consonant_symbol_is_ignored():
+    piece = _consonant_piece('not-a-phone')
+    sig = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE)
+    assert np.all(np.isfinite(sig))
+    assert np.max(np.abs(sig)) > 0.0

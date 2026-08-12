@@ -169,7 +169,8 @@ def render_sarangi(piece, inst_idx: int, sr: float = DEFAULT_SR,
 
 def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
                  control_rate: float = DEFAULT_CONTROL_RATE,
-                 uniform_vowel: bool = False) -> np.ndarray:
+                 uniform_vowel: bool = False,
+                 consonants: bool = True) -> np.ndarray:
     ctrl = extract_track_control(piece, inst_idx, 0, control_rate)
     n = _n_samples(ctrl, sr)
     hop = _hop(sr, control_rate)
@@ -212,13 +213,36 @@ def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
                 formants[j, k] = s0[j] + (s1[j] - s0[j]) * frac
                 bws[j, k] = s0[3 + j] + (s1[3 + j] - s0[3 + j]) * frac
 
+    # source-level / nasal / parallel-branch controls: neutral (cascade-only,
+    # no nasals, parallel branch off) defaults, which reproduce the web
+    # worklet exactly, then overwritten within consonant gesture windows.
+    extra = kernels.default_extra_ctrl(
+        nf,
+        cascade_voicing_db=KLATT_CASCADE_VOICING_DB,
+        cascade_aspiration_db=KLATT_CASCADE_ASPIRATION_DB,
+        cascade_aspiration_mod=KLATT_CASCADE_ASPIRATION_MOD)
+    par_formant_db = kernels.default_par_formant_db_ctrl(nf)
+
+    # Silence the voice source outside sounding trajectories. The web app
+    # relied on output gain alone, which leaves the synth ringing internally;
+    # that is inaudible there but would leak into any window a consonant
+    # gesture opens the gain for (e.g. a stop closure before a note).
+    silent = ~ctrl.active
+    if silent.any():
+        extra[kernels.ROW_CASC_VOICING_DB, silent] = kernels.OFF_DB
+        extra[kernels.ROW_CASC_ASPIRATION_DB, silent] = kernels.OFF_DB
+
+    if consonants:
+        from .gestures import apply_consonant_gestures
+        apply_consonant_gestures(ctrl, formants, bws, extra, par_formant_db,
+                                 gain, f0, float(sr))
+
     seed = inst_idx * 1000 + 21
     flutter_offset = float((seed * 2654435761) % 1000)
     return kernels.klatt_voice(
-        f0, gain, formants, bws, n, float(sr), hop,
+        f0, gain, formants, bws, extra, par_formant_db, n, float(sr), hop,
         KLATT_FLUTTER, KLATT_OPEN_PHASE_RATIO, KLATT_BREATHINESS_DB,
-        KLATT_CASCADE_VOICING_DB, KLATT_CASCADE_ASPIRATION_DB,
-        KLATT_CASCADE_ASPIRATION_MOD, seed, flutter_offset)
+        seed, flutter_offset)
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +251,8 @@ def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
 
 def render_track(piece, inst_idx: int, sr: float = DEFAULT_SR,
                  control_rate: float = DEFAULT_CONTROL_RATE,
-                 uniform_vowel: bool = False) -> Optional[np.ndarray]:
+                 uniform_vowel: bool = False,
+                 consonants: bool = True) -> Optional[np.ndarray]:
     inst = piece.instrumentation[inst_idx]
     if inst == Instrument.Sitar:
         return render_sitar(piece, inst_idx, sr, control_rate)
@@ -235,7 +260,8 @@ def render_track(piece, inst_idx: int, sr: float = DEFAULT_SR,
         return render_sarangi(piece, inst_idx, sr, control_rate)
     if inst in (Instrument.Vocal_M, Instrument.Vocal_F):
         return render_vocal(piece, inst_idx, sr, control_rate,
-                            uniform_vowel=uniform_vowel)
+                            uniform_vowel=uniform_vowel,
+                            consonants=consonants)
     return None
 
 
@@ -244,7 +270,8 @@ def synthesize_piece(piece, out: Optional[str] = None,
                      sr: int = DEFAULT_SR,
                      control_rate: float = DEFAULT_CONTROL_RATE,
                      uniform_vowel: bool = False,
-                     track_gains: Optional[Sequence[float]] = None
+                     track_gains: Optional[Sequence[float]] = None,
+                     consonants: bool = True
                      ) -> np.ndarray:
     """Render a Piece to audio.
 
@@ -258,6 +285,8 @@ def synthesize_piece(piece, out: Optional[str] = None,
         uniform_vowel: render all vocal trajectories with the vowel 'a'.
         track_gains: optional per-selected-track linear gains applied after
             per-track peak normalization.
+        consonants: render consonant gestures (closures, bursts, aspiration,
+            nasal murmurs) from the trajectories' consonant annotations.
 
     Returns:
         float64 numpy array of mono samples in [-1, 1].
@@ -268,7 +297,8 @@ def synthesize_piece(piece, out: Optional[str] = None,
     rendered: List[np.ndarray] = []
     for i, idx in enumerate(tracks):
         sig = render_track(piece, idx, sr, control_rate,
-                           uniform_vowel=uniform_vowel)
+                           uniform_vowel=uniform_vowel,
+                           consonants=consonants)
         if sig is None:
             continue
         peak = float(np.max(np.abs(sig))) if sig.size else 0.0

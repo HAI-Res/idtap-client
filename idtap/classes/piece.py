@@ -941,7 +941,8 @@ class Piece:
                    sr: int = 44100,
                    control_rate: float = 200.0,
                    uniform_vowel: bool = False,
-                   track_gains: Optional[List[float]] = None):
+                   track_gains: Optional[List[float]] = None,
+                   consonants: bool = True):
         """Render this transcription to audio using the offline synthesis
         engines (Karplus-Strong sitar + chikari, filter-feedback sarangi,
         Klatt voice).
@@ -954,17 +955,18 @@ class Piece:
             uniform_vowel: render all vocal trajectories with the vowel 'a'.
             track_gains: optional per-track linear gains applied after
                 per-track normalization.
+            consonants: render consonant gestures (closures, bursts,
+                aspiration, nasal murmurs) from consonant annotations.
 
         Returns:
             numpy array of mono float samples in [-1, 1].
-
-        Note: install numba for fast rendering (pip install idtap[synth]).
         """
         from ..synthesis import synthesize_piece
         return synthesize_piece(self, out=out, tracks=tracks, sr=sr,
                                 control_rate=control_rate,
                                 uniform_vowel=uniform_vowel,
-                                track_gains=track_gains)
+                                track_gains=track_gains,
+                                consonants=consonants)
 
     # ------------------------------------------------------------------
     def track_from_traj(self, traj: Trajectory) -> int:

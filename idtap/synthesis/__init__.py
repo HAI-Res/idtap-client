@@ -11,8 +11,6 @@ Usage:
 
 or equivalently:
     piece.synthesize(out='render.wav')
-
-Install numba for fast rendering: pip install idtap[synth]
 """
 from .render import (synthesize_piece, render_track, render_sitar,
                      render_sarangi, render_vocal, write_wav)

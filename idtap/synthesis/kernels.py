@@ -374,26 +374,129 @@ def _db_to_lin(db):
     return 10.0 ** (db / 20.0)
 
 
+# --- extra_ctrl row layout -------------------------------------------------
+# klatt_voice() takes the many per-frame source/nasal parameters as a single
+# 2D float64 array of shape (N_EXTRA_CTRL_ROWS, n_frames). Rows are sampled
+# (held, not interpolated) at the start of each F0 period, exactly like the
+# oral formant arrays. Levels are in dB; <= -99 means "off" (linear 0).
+ROW_CASC_VOICING_DB = 0        # cascade branch voicing level
+ROW_CASC_ASPIRATION_DB = 1     # cascade branch aspiration (glottis noise)
+ROW_CASC_ASPIRATION_MOD = 2    # cascade aspiration modulation, 0 .. 1
+ROW_NASAL_FORMANT_FREQ = 3     # nasal formant freq (Hz), <= 0 = off
+ROW_NASAL_FORMANT_BW = 4       # nasal formant bandwidth (Hz)
+ROW_NASAL_ANTIFORMANT_FREQ = 5  # cascade nasal antiformant freq, <= 0 = off
+ROW_NASAL_ANTIFORMANT_BW = 6   # cascade nasal antiformant bandwidth
+ROW_PAR_VOICING_DB = 7         # parallel branch voicing level
+ROW_PAR_ASPIRATION_DB = 8      # parallel branch aspiration level
+ROW_PAR_ASPIRATION_MOD = 9     # parallel aspiration modulation, 0 .. 1
+ROW_FRICATION_DB = 10          # parallel frication noise level
+ROW_FRICATION_MOD = 11         # frication modulation, 0 .. 1
+ROW_PAR_BYPASS_DB = 12         # parallel bypass level
+ROW_PAR_NASAL_FORMANT_DB = 13  # parallel nasal formant level (peak gain)
+N_EXTRA_CTRL_ROWS = 14
+
+OFF_DB = -99.0
+
+# resonator / antiresonator modes
+_MODE_PASSTHROUGH = 0
+_MODE_ACTIVE = 1
+_MODE_MUTE = 2
+
+
+def default_extra_ctrl(n_frames, cascade_voicing_db=0.0,
+                       cascade_aspiration_db=-25.0,
+                       cascade_aspiration_mod=0.5):
+    """Neutral extra_ctrl array: cascade branch only, nasals and parallel off.
+
+    Reproduces the web worklet's defaults (parallelEnabled = 0, no nasal
+    formant/antiformant), i.e. exactly the behaviour of the cascade-only
+    kernel.
+    """
+    a = np.zeros((N_EXTRA_CTRL_ROWS, n_frames), dtype=np.float64)
+    a[ROW_CASC_VOICING_DB, :] = cascade_voicing_db
+    a[ROW_CASC_ASPIRATION_DB, :] = cascade_aspiration_db
+    a[ROW_CASC_ASPIRATION_MOD, :] = cascade_aspiration_mod
+    # nasal formant / antiformant frequencies of 0 mean "passthrough"
+    a[ROW_PAR_VOICING_DB, :] = OFF_DB
+    a[ROW_PAR_ASPIRATION_DB, :] = OFF_DB
+    a[ROW_PAR_ASPIRATION_MOD, :] = 0.5
+    a[ROW_FRICATION_DB, :] = OFF_DB
+    a[ROW_FRICATION_MOD, :] = 0.5
+    a[ROW_PAR_BYPASS_DB, :] = OFF_DB
+    a[ROW_PAR_NASAL_FORMANT_DB, :] = OFF_DB
+    return a
+
+
+def default_par_formant_db_ctrl(n_frames):
+    """Neutral (all muted) parallel oral formant level array, shape (6, N)."""
+    return np.full((6, n_frames), OFF_DB, dtype=np.float64)
+
+
 @njit(cache=True)
-def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, n, sr, hop,
+def _reson_coeffs(f, bw, sr):
+    """klatt-syn Resonator.set() with dcGain = 1; returns (a, b, c, r)."""
+    r = math.exp(-math.pi * bw / sr)
+    c = -(r * r)
+    b = 2.0 * r * math.cos(2.0 * math.pi * f / sr)
+    a = 1.0 - b - c
+    return a, b, c, r
+
+
+@njit(cache=True)
+def _antireson_coeffs(f, bw, sr):
+    """klatt-syn AntiResonator.set(); returns (a, b, c) with the 1/a0 inversion."""
+    r = math.exp(-math.pi * bw / sr)
+    c0 = -(r * r)
+    b0 = 2.0 * r * math.cos(2.0 * math.pi * f / sr)
+    a0 = 1.0 - b0 - c0
+    if a0 == 0.0:
+        return 0.0, 0.0, 0.0
+    return 1.0 / a0, -b0 / a0, -c0 / a0
+
+
+@njit(cache=True)
+def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, extra_ctrl,
+                par_formant_db_ctrl, n, sr, hop,
                 flutter_level, open_phase_ratio, breathiness_db,
-                cascade_voicing_db, cascade_aspiration_db,
-                cascade_aspiration_mod, seed, flutter_offset):
-    """Cascade-branch Klatt synthesizer with the KLGLOTT88 natural source.
+                seed, flutter_offset):
+    """Klatt synthesizer (cascade + parallel branch), KLGLOTT88 source.
 
-    Faithful port of klatt-syn's Generator (natural glottal source, cascade
-    branch only — matching the web worklet's defaults: parallelEnabled=0,
-    tiltDb=0, gainDb=0, nasal formant/antiformant off).
+    Faithful port of klatt-syn's Generator with the natural glottal source
+    and tiltDb = 0 / gainDb = 0 (per-sample ``gain_ctrl`` replaces gainLin,
+    matching the web worklet's extGain).
 
-    formant_ctrl/bw_ctrl: shape (6, n_frames) control-rate arrays of oral
-    formant frequencies and bandwidths. gain_ctrl is applied per sample
-    (the worklet's extGain). Frame parameters are picked up at the start of
-    each new F0 period, as in the original.
+    Args:
+        f0_ctrl: (n_frames,) fundamental frequency in Hz, 0 = silence.
+        gain_ctrl: (n_frames,) linear output gain, interpolated per sample.
+        formant_ctrl, bw_ctrl: (6, n_frames) oral formant frequencies and
+            bandwidths in Hz, shared by both branches (as in klatt-syn).
+            freq <= 0 (or bw <= 0) means passthrough in the cascade branch
+            and mute in the parallel branch.
+        extra_ctrl: (N_EXTRA_CTRL_ROWS, n_frames), see the ROW_* constants.
+        par_formant_db_ctrl: (6, n_frames) parallel oral formant peak levels
+            in dB; <= -99 mutes the resonator.
+        n, sr, hop: sample count, sample rate, control-array hop in samples.
+        flutter_level, open_phase_ratio, breathiness_db: frame-constant
+            parameters (as in the worklet).
+        seed, flutter_offset: RNG seed and flutter time offset.
+
+    The cascade branch is always computed. The parallel branch is only
+    computed when at least one of its source levels (voicing, aspiration,
+    frication) is nonzero — this replaces klatt-syn's ``parallelEnabled``
+    flag and avoids a separate boolean array.
+
+    Noise draw order per sample (fixed, for reproducibility): breathiness
+    white noise (only within the glottal open phase), cascade aspiration
+    white noise (always, even when the level is 0), then — only while the
+    parallel branch is active — parallel aspiration and parallel frication
+    white noise. Each of the three LP noise sources keeps its own filter
+    state, as klatt-syn uses three independent LpNoiseSource instances.
     """
     np.random.seed(seed)
     out = np.empty(n, dtype=np.float64)
 
-    # aspiration noise source: LpFilter1 matched to klatt-syn's LpNoiseSource
+    # noise sources: LpFilter1 matched to klatt-syn's LpNoiseSource. All
+    # three sources share these coefficients but keep separate state.
     old_b = 0.75
     g = (1.0 - old_b) / math.sqrt(
         1.0 - 2.0 * old_b * math.cos(2.0 * math.pi * 1000.0 / 10000.0)
@@ -403,7 +506,9 @@ def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, n, sr, hop,
     q = (1.0 - g ** 2 * math.cos(w)) / (1.0 - g ** 2)
     asp_b = q - math.sqrt(q ** 2 - 1.0)
     asp_a = (1.0 - asp_b) * extra_gain
-    asp_y1 = 0.0
+    asp_casc_y1 = 0.0
+    asp_par_y1 = 0.0
+    fric_par_y1 = 0.0
 
     # output LP filter: Resonator.set(0, sr/2)
     r_out = math.exp(-math.pi * (sr / 2.0) / sr)
@@ -419,10 +524,58 @@ def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, n, sr, hop,
     fc = np.zeros(6, dtype=np.float64)
     fy1 = np.zeros(6, dtype=np.float64)
     fy2 = np.zeros(6, dtype=np.float64)
+    fmode = np.zeros(6, dtype=np.int64)
+
+    # cascade nasal formant resonator
+    nfa = 1.0
+    nfb = 0.0
+    nfc = 0.0
+    nfy1 = 0.0
+    nfy2 = 0.0
+    nfmode = _MODE_PASSTHROUGH
+
+    # cascade nasal antiformant (FIR)
+    naa = 1.0
+    nab = 0.0
+    nac = 0.0
+    nax1 = 0.0
+    nax2 = 0.0
+    namode = _MODE_PASSTHROUGH
+
+    # parallel nasal formant resonator
+    pna = 0.0
+    pnb = 0.0
+    pnc = 0.0
+    pny1 = 0.0
+    pny2 = 0.0
+    pnmode = _MODE_MUTE
+
+    # parallel oral formant resonators
+    pa = np.zeros(6, dtype=np.float64)
+    pb = np.zeros(6, dtype=np.float64)
+    pc = np.zeros(6, dtype=np.float64)
+    py1 = np.zeros(6, dtype=np.float64)
+    py2 = np.zeros(6, dtype=np.float64)
+    pmode = np.zeros(6, dtype=np.int64)
+    for j in range(6):
+        pmode[j] = _MODE_MUTE
+
+    # parallel differencing filter state
+    diff_x1 = 0.0
 
     breathiness_lin = _db_to_lin(breathiness_db)
-    cascade_voicing_lin = _db_to_lin(cascade_voicing_db)
-    cascade_aspiration_lin = _db_to_lin(cascade_aspiration_db)
+
+    # frame state (refreshed at the start of every F0 period)
+    cascade_voicing_lin = 0.0
+    cascade_aspiration_lin = 0.0
+    cascade_aspiration_mod = 0.0
+    par_voicing_lin = 0.0
+    par_aspiration_lin = 0.0
+    par_aspiration_mod = 0.0
+    frication_lin = 0.0
+    frication_mod = 0.0
+    par_bypass_lin = 0.0
+    par_enabled = False
 
     # natural glottal source state
     gs_x = 0.0
@@ -434,12 +587,17 @@ def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, n, sr, hop,
     pos_in_period = 0
     nyq = sr * 0.499
 
+    n_extra = extra_ctrl.shape[1]
+    n_pardb = par_formant_db_ctrl.shape[1]
+
     for i in range(n):
         if period_length == 0 or pos_in_period >= period_length:
             # --- start new period: pick up frame params from control arrays
             k = int(i / hop)
             if k >= f0_ctrl.shape[0]:
                 k = f0_ctrl.shape[0] - 1
+            kx = k if k < n_extra else n_extra - 1
+            kp = k if k < n_pardb else n_pardb - 1
             f0 = f0_ctrl[k]
             # flutter modulation
             if flutter_level > 0.0 and f0 > 0.0:
@@ -470,22 +628,101 @@ def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, n, sr, hop,
                 gs_b = 0.0
                 gs_a = 0.0
 
-            # update cascade resonators
+            # --- source levels
+            cascade_voicing_lin = _db_to_lin(
+                extra_ctrl[ROW_CASC_VOICING_DB, kx])
+            cascade_aspiration_lin = _db_to_lin(
+                extra_ctrl[ROW_CASC_ASPIRATION_DB, kx])
+            cascade_aspiration_mod = extra_ctrl[ROW_CASC_ASPIRATION_MOD, kx]
+            par_voicing_lin = _db_to_lin(extra_ctrl[ROW_PAR_VOICING_DB, kx])
+            par_aspiration_lin = _db_to_lin(
+                extra_ctrl[ROW_PAR_ASPIRATION_DB, kx])
+            par_aspiration_mod = extra_ctrl[ROW_PAR_ASPIRATION_MOD, kx]
+            frication_lin = _db_to_lin(extra_ctrl[ROW_FRICATION_DB, kx])
+            frication_mod = extra_ctrl[ROW_FRICATION_MOD, kx]
+            par_bypass_lin = _db_to_lin(extra_ctrl[ROW_PAR_BYPASS_DB, kx])
+            par_enabled = (par_voicing_lin > 0.0 or par_aspiration_lin > 0.0
+                           or frication_lin > 0.0)
+
+            # --- cascade nasal antiformant (AntiResonator)
+            naf = extra_ctrl[ROW_NASAL_ANTIFORMANT_FREQ, kx]
+            nabw = extra_ctrl[ROW_NASAL_ANTIFORMANT_BW, kx]
+            if naf > 0.0 and nabw > 0.0 and naf < nyq:
+                naa, nab, nac = _antireson_coeffs(naf, nabw, sr)
+                namode = _MODE_ACTIVE
+            else:
+                naa = 1.0
+                nab = 0.0
+                nac = 0.0
+                nax1 = 0.0
+                nax2 = 0.0
+                namode = _MODE_PASSTHROUGH
+
+            # --- nasal formant (shared freq/bw for both branches)
+            nff = extra_ctrl[ROW_NASAL_FORMANT_FREQ, kx]
+            nfbw = extra_ctrl[ROW_NASAL_FORMANT_BW, kx]
+            nasal_on = nff > 0.0 and nfbw > 0.0 and nff < nyq
+            if nasal_on:
+                nfa, nfb, nfc, _r = _reson_coeffs(nff, nfbw, sr)
+                nfmode = _MODE_ACTIVE
+            else:
+                nfa = 1.0
+                nfb = 0.0
+                nfc = 0.0
+                nfy1 = 0.0
+                nfy2 = 0.0
+                nfmode = _MODE_PASSTHROUGH
+
+            # parallel nasal formant: peak-gain adjusted
+            pn_gain = _db_to_lin(extra_ctrl[ROW_PAR_NASAL_FORMANT_DB, kx])
+            if nasal_on and pn_gain > 0.0:
+                _a, pnb, pnc, pnr = _reson_coeffs(nff, nfbw, sr)
+                pna = pn_gain * (1.0 - pnr)
+                pnmode = _MODE_ACTIVE
+            else:
+                pna = 0.0
+                pnb = 0.0
+                pnc = 0.0
+                pny1 = 0.0
+                pny2 = 0.0
+                pnmode = _MODE_MUTE
+
+            # --- oral formants, both branches
             for j in range(6):
                 f = formant_ctrl[j, k]
                 bw = bw_ctrl[j, k]
-                if f > 0.0 and bw > 0.0 and f < nyq:
-                    r = math.exp(-math.pi * bw / sr)
-                    fc[j] = -(r ** 2)
-                    fb[j] = 2.0 * r * math.cos(2.0 * math.pi * f / sr)
-                    fa[j] = 1.0 - fb[j] - fc[j]
+                usable = f > 0.0 and bw > 0.0 and f < nyq
+                if usable:
+                    fa[j], fb[j], fc[j], r = _reson_coeffs(f, bw, sr)
+                    fmode[j] = _MODE_ACTIVE
                 else:
-                    # passthrough
+                    r = 0.0
                     fa[j] = 1.0
                     fb[j] = 0.0
                     fc[j] = 0.0
                     fy1[j] = 0.0
                     fy2[j] = 0.0
+                    fmode[j] = _MODE_PASSTHROUGH
+                peak_gain = _db_to_lin(par_formant_db_ctrl[j, kp])
+                if usable and peak_gain > 0.0:
+                    pb[j] = fb[j]
+                    pc[j] = fc[j]
+                    if j >= 1:
+                        # compensate the differencing filter for F2 .. F6
+                        wf = 2.0 * math.pi * f / sr
+                        diff_gain = math.sqrt(2.0 - 2.0 * math.cos(wf))
+                        filter_gain = peak_gain / diff_gain
+                    else:
+                        filter_gain = peak_gain
+                    pa[j] = filter_gain * (1.0 - r)
+                    pmode[j] = _MODE_ACTIVE
+                else:
+                    pa[j] = 0.0
+                    pb[j] = 0.0
+                    pc[j] = 0.0
+                    py1[j] = 0.0
+                    py2[j] = 0.0
+                    pmode[j] = _MODE_MUTE
 
         # --- glottal source sample
         if open_phase_length > 0 and pos_in_period < open_phase_length:
@@ -500,23 +737,87 @@ def klatt_voice(f0_ctrl, gain_ctrl, formant_ctrl, bw_ctrl, n, sr, hop,
         if pos_in_period < open_phase_length:
             voice += (np.random.random() * 2.0 - 1.0) * breathiness_lin
 
+        second_half = pos_in_period >= period_length / 2.0
+
         # --- cascade branch
         cascade_voice = voice * cascade_voicing_lin
-        if pos_in_period >= period_length / 2.0:
+        if second_half:
             asp_mod = cascade_aspiration_mod
         else:
             asp_mod = 0.0
         white = np.random.random() * 2.0 - 1.0
-        asp_y1 = asp_a * white + asp_b * asp_y1
-        aspiration = asp_y1 * cascade_aspiration_lin * (1.0 - asp_mod)
+        asp_casc_y1 = asp_a * white + asp_b * asp_casc_y1
+        aspiration = asp_casc_y1 * cascade_aspiration_lin * (1.0 - asp_mod)
         v = cascade_voice + aspiration
+        # nasal antiformant (the degenerate a0 == 0 case yields a = b = c = 0,
+        # which is equivalent to klatt-syn's mute state)
+        if namode == _MODE_ACTIVE:
+            y = naa * v + nab * nax1 + nac * nax2
+            nax2 = nax1
+            nax1 = v
+            v = y
+        # nasal formant
+        if nfmode == _MODE_ACTIVE:
+            y = nfa * v + nfb * nfy1 + nfc * nfy2
+            nfy2 = nfy1
+            nfy1 = y
+            v = y
+        # oral formants
         for j in range(6):
-            if fb[j] == 0.0 and fc[j] == 0.0:
+            if fmode[j] != _MODE_ACTIVE:
                 continue  # passthrough
             y = fa[j] * v + fb[j] * fy1[j] + fc[j] * fy2[j]
             fy2[j] = fy1[j]
             fy1[j] = y
             v = y
+
+        # --- parallel branch
+        if par_enabled:
+            par_voice = voice * par_voicing_lin
+            if second_half:
+                pmod = par_aspiration_mod
+            else:
+                pmod = 0.0
+            white = np.random.random() * 2.0 - 1.0
+            asp_par_y1 = asp_a * white + asp_b * asp_par_y1
+            par_asp = asp_par_y1 * par_aspiration_lin * (1.0 - pmod)
+            source = par_voice + par_asp
+            source_diff = source - diff_x1
+            diff_x1 = source
+            if second_half:
+                fmod_now = frication_mod
+            else:
+                fmod_now = 0.0
+            white = np.random.random() * 2.0 - 1.0
+            fric_par_y1 = asp_a * white + asp_b * fric_par_y1
+            fric = fric_par_y1 * frication_lin * (1.0 - fmod_now)
+            source2 = source_diff + fric
+            pv = 0.0
+            # nasal formant is directly applied to source
+            if pnmode == _MODE_ACTIVE:
+                y = pna * source + pnb * pny1 + pnc * pny2
+                pny2 = pny1
+                pny1 = y
+                pv += y
+            # F1 is directly applied to source
+            if pmode[0] == _MODE_ACTIVE:
+                y = pa[0] * source + pb[0] * py1[0] + pc[0] * py2[0]
+                py2[0] = py1[0]
+                py1[0] = y
+                pv += y
+            # F2 .. F6 are applied to source difference + frication
+            for j in range(1, 6):
+                if pmode[j] != _MODE_ACTIVE:
+                    continue
+                y = pa[j] * source2 + pb[j] * py1[j] + pc[j] * py2[j]
+                py2[j] = py1[j]
+                py1[j] = y
+                if j % 2 == 0:
+                    pv += y
+                else:
+                    pv -= y
+            pv += par_bypass_lin * source2
+            v += pv
 
         # output LP + per-sample gain
         y = oa * v + ob * oy1 + oc * oy2

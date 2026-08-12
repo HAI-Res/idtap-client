@@ -1,6 +1,10 @@
-"""Numba shim: use @njit when numba is available, otherwise fall back to
-pure Python (functional but slow — installing ``idtap[synth]`` is strongly
-recommended for rendering anything longer than a few seconds)."""
+"""Numba shim.
+
+numba is a required dependency of idtap; this shim exists only so the
+package remains importable (with a loud warning and drastically slower
+synthesis) in the unlikely event numba is unavailable — e.g. a brand-new
+CPython version numba doesn't support yet.
+"""
 from __future__ import annotations
 
 import warnings
@@ -23,8 +27,9 @@ except ImportError:  # pragma: no cover - exercised only without numba
 def warn_if_slow() -> None:
     if not HAVE_NUMBA:
         warnings.warn(
-            "numba is not installed; synthesis will run in pure Python and "
-            "may be very slow. Install with: pip install idtap[synth]",
+            "numba could not be imported; synthesis will run in pure Python "
+            "and may be very slow. numba is a required dependency — check "
+            "your installation (pip install numba).",
             RuntimeWarning,
             stacklevel=3,
         )

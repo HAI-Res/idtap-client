@@ -40,12 +40,19 @@ class BurstEvent:
 
 @dataclass
 class Span:
-    """A contiguous non-silent trajectory, with silence-boundary flags."""
+    """A contiguous non-silent trajectory, with silence-boundary flags.
+
+    ``start_consonant`` / ``end_consonant`` are IPA strings (from the
+    trajectory's ``*_consonant_ipa`` fields) naming a consonant articulated
+    at the onset / offset of this trajectory; see synthesis.consonants.
+    """
     start: float
     end: float
     from_sil: bool
     to_sil: bool
     vowel: Optional[str] = None
+    start_consonant: Optional[str] = None
+    end_consonant: Optional[str] = None
 
 
 @dataclass
@@ -97,9 +104,11 @@ def extract_track_control(piece, inst_idx: int, string_idx: int = 0,
         next_traj = trajs[t_idx + 1] if t_idx + 1 < len(trajs) else None
         from_sil = prev_traj is None or prev_traj.id == SILENCE_ID
         to_sil = next_traj is None or next_traj.id == SILENCE_ID
-        ctrl.spans.append(Span(start=start, end=end, from_sil=from_sil,
-                               to_sil=to_sil,
-                               vowel=getattr(traj, 'vowel', None)))
+        ctrl.spans.append(Span(
+            start=start, end=end, from_sil=from_sil, to_sil=to_sil,
+            vowel=getattr(traj, 'vowel', None),
+            start_consonant=getattr(traj, 'start_consonant_ipa', None),
+            end_consonant=getattr(traj, 'end_consonant_ipa', None)))
 
         # control frames covered by this trajectory
         k0 = int(np.ceil(start / hop - 1e-9))
