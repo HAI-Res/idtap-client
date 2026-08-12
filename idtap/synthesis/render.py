@@ -16,7 +16,8 @@ from . import kernels
 from ._nb import warn_if_slow
 from .control import (TrackControl, extract_track_control,
                       envelope_from_spans, cutoff_curve_with_dampens)
-from .vowels import (DEFAULT_B, DEFAULT_F, SHWAH_TIME, vowel_targets)
+from .vowels import (DEFAULT_B, DEFAULT_F, FEMALE_FORMANT_SCALE,
+                     SHWAH_TIME, vowel_targets)
 
 DEFAULT_SR = 44100
 DEFAULT_CONTROL_RATE = 200.0
@@ -191,6 +192,17 @@ def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
         formants[j, :] = DEFAULT_F[j]
         bws[j, :] = DEFAULT_B[j]
 
+    # Without a measured vowel space, scale the built-in (adult-male) table
+    # to the voice type, so a female singer is not rendered with male
+    # formants — which is what happened to every vocal track before this.
+    formant_scale = 1.0
+    if vowel_space is None:
+        try:
+            if piece.instrumentation[inst_idx] == Instrument.Vocal_F:
+                formant_scale = FEMALE_FORMANT_SCALE
+        except (AttributeError, IndexError):
+            pass
+
     rate = ctrl.control_rate
     spans = sorted(ctrl.spans, key=lambda s: s.start)
     for s_idx, span in enumerate(spans):
@@ -203,6 +215,9 @@ def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
             continue
         vowel = 'a' if uniform_vowel else span.vowel
         s0, s1 = vowel_targets(vowel)
+        if formant_scale != 1.0:
+            s0 = [v * formant_scale if j < 3 else v for j, v in enumerate(s0)]
+            s1 = [v * formant_scale if j < 3 else v for j, v in enumerate(s1)]
         if vowel_space is not None:
             measured = vowel_space.get(vowel)
             if measured is not None:

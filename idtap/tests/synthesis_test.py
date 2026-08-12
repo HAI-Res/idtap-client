@@ -448,6 +448,37 @@ def test_consonants_flag_disables_gestures():
 # measured vowel spaces
 # ---------------------------------------------------------------------------
 
+def test_female_voice_renders_with_higher_formants_by_default():
+    """With no measured space, a female track must not get male formants."""
+    male = render_track(_build_piece(Instrument.Vocal_M, vowel='a'), 0,
+                        sr=int(SR), control_rate=CONTROL_RATE)
+    female = render_track(_build_piece(Instrument.Vocal_F, vowel='a'), 0,
+                          sr=int(SR), control_rate=CONTROL_RATE)
+    assert not np.array_equal(male, female)
+
+    def peak(x, lo, hi):
+        seg = x[int(0.2 * SR):int(0.9 * SR)]
+        spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg))))
+        freqs = np.fft.rfftfreq(len(seg), 1 / SR)
+        m = (freqs >= lo) & (freqs <= hi)
+        return float(freqs[m][np.argmax(spec[m])])
+
+    assert peak(female, 900, 1900) > peak(male, 900, 1900)
+
+
+def test_measured_space_supersedes_voice_scaling():
+    from idtap.synthesis.formants import VowelSpace
+    piece = _build_piece(Instrument.Vocal_F, vowel='a')
+    space = VowelSpace(targets={'a': (620.0, 1220.0, 2550.0, 80., 50., 140.)},
+                       counts={'a': 99}, voice='female', measured=('a',))
+    with_space = render_track(piece, 0, sr=int(SR),
+                              control_rate=CONTROL_RATE, vowel_space=space)
+    default = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE)
+    # the measured targets are the unscaled male values, so the render must
+    # differ from the female-scaled default
+    assert not np.allclose(with_space, default)
+
+
 def test_scaled_default_space_raises_female_formants():
     from idtap.synthesis.formants import scaled_default_space
     male = scaled_default_space('male')

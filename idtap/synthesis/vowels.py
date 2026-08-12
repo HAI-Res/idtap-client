@@ -28,6 +28,13 @@ VOWEL_PARAMS = [
 ]
 
 VOWELS = ['a', 'ā', 'i', 'ī', 'u', 'ū', 'ē', 'ai', 'ō', 'au', '_']
+
+# The table above is an adult-male one (it came from the web app, which
+# used it for every voice). A shorter vocal tract raises every formant by
+# roughly this factor, so a female voice rendered with the male table sits
+# audibly wrong. Applied by default per instrument; a measured vowel space
+# supersedes it. See synthesis/formants.py.
+FEMALE_FORMANT_SCALE = 1.17
 VOWEL_PARAM_IDXS = [7, 6, 1, 0, 9, 10, 2, 3, 8, 5, 7]
 
 # Klatt worklet defaults for the upper formants (never varied by the app)
