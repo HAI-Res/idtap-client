@@ -942,7 +942,8 @@ class Piece:
                    control_rate: float = 200.0,
                    uniform_vowel: bool = False,
                    track_gains: Optional[List[float]] = None,
-                   consonants: bool = True):
+                   consonants: bool = True,
+                   vowel_space=None):
         """Render this transcription to audio using the offline synthesis
         engines (Karplus-Strong sitar + chikari, filter-feedback sarangi,
         Klatt voice).
@@ -957,6 +958,9 @@ class Piece:
                 per-track normalization.
             consonants: render consonant gestures (closures, bursts,
                 aspiration, nasal murmurs) from consonant annotations.
+            vowel_space: optional VowelSpace measured from the singer's own
+                recording (idtap.synthesis.formants), replacing the generic
+                vowel formant table.
 
         Returns:
             numpy array of mono float samples in [-1, 1].
@@ -966,7 +970,8 @@ class Piece:
                                 control_rate=control_rate,
                                 uniform_vowel=uniform_vowel,
                                 track_gains=track_gains,
-                                consonants=consonants)
+                                consonants=consonants,
+                                vowel_space=vowel_space)
 
     # ------------------------------------------------------------------
     def track_from_traj(self, traj: Trajectory) -> int:

@@ -444,6 +444,64 @@ def test_consonants_flag_disables_gestures():
     assert np.max(np.abs(on[rel - int(0.04 * SR):rel])) == 0.0
 
 
+# ---------------------------------------------------------------------------
+# measured vowel spaces
+# ---------------------------------------------------------------------------
+
+def test_scaled_default_space_raises_female_formants():
+    from idtap.synthesis.formants import scaled_default_space
+    male = scaled_default_space('male')
+    female = scaled_default_space('female')
+    m, f = male.get('a'), female.get('a')
+    assert m is not None and f is not None
+    # a shorter vocal tract puts every formant higher
+    for j in range(3):
+        assert f[j] > m[j]
+    # bandwidths are not scaled
+    assert f[3] == m[3]
+
+
+def test_vowel_space_round_trip(tmp_path: Path):
+    from idtap.synthesis.formants import VowelSpace, scaled_default_space
+    space = scaled_default_space('female')
+    space.source = 'test'
+    p = tmp_path / 'space.json'
+    space.save(str(p))
+    back = VowelSpace.load(str(p))
+    assert back.voice == 'female'
+    assert back.source == 'test'
+    assert back.get('a') == pytest.approx(space.get('a'))
+    assert 'vowel space' in back.summary()
+
+
+def test_vowel_space_overrides_formants_in_render():
+    from idtap.synthesis.formants import VowelSpace
+    piece = _build_piece(Instrument.Vocal_F, vowel='a')
+    plain = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE)
+    # an extreme, unmistakable vowel target
+    space = VowelSpace(targets={'a': (300.0, 2400.0, 3200.0, 80., 90., 120.)},
+                       counts={'a': 99}, voice='female')
+    shifted = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE,
+                           vowel_space=space)
+    assert not np.allclose(plain, shifted)
+    seg = shifted[int(0.2 * SR):int(0.9 * SR)]
+    # energy should now sit around the imposed F2 rather than the default
+    near_f2 = _band_energy(seg, SR, 2200, 2600)
+    default_f2 = _band_energy(seg, SR, 1100, 1400)
+    assert near_f2 > default_f2
+
+
+def test_unknown_vowel_falls_back_to_table():
+    from idtap.synthesis.formants import VowelSpace
+    piece = _build_piece(Instrument.Vocal_M, vowel='a')
+    space = VowelSpace(targets={'ō': (400., 800., 2400., 80., 90., 120.)},
+                       counts={'ō': 5}, voice='male')
+    sig = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE,
+                       vowel_space=space)
+    assert np.all(np.isfinite(sig))
+    assert np.max(np.abs(sig)) > 0
+
+
 def test_more_instruments_than_phrase_tracks():
     """Legacy transcriptions can declare instruments they have no phrase
     grid for; those tracks are skipped instead of raising IndexError."""

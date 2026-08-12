@@ -170,7 +170,8 @@ def render_sarangi(piece, inst_idx: int, sr: float = DEFAULT_SR,
 def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
                  control_rate: float = DEFAULT_CONTROL_RATE,
                  uniform_vowel: bool = False,
-                 consonants: bool = True) -> np.ndarray:
+                 consonants: bool = True,
+                 vowel_space=None) -> np.ndarray:
     ctrl = extract_track_control(piece, inst_idx, 0, control_rate)
     n = _n_samples(ctrl, sr)
     hop = _hop(sr, control_rate)
@@ -202,6 +203,13 @@ def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
             continue
         vowel = 'a' if uniform_vowel else span.vowel
         s0, s1 = vowel_targets(vowel)
+        if vowel_space is not None:
+            measured = vowel_space.get(vowel)
+            if measured is not None:
+                # a measured vowel is a single steady target: the built-in
+                # table's two-point glide is a stand-in for a real one
+                s0 = list(measured)
+                s1 = list(measured)
         for k in range(k0, k_end):
             t = k / rate - span.start
             frac = t / SHWAH_TIME
@@ -252,7 +260,8 @@ def render_vocal(piece, inst_idx: int, sr: float = DEFAULT_SR,
 def render_track(piece, inst_idx: int, sr: float = DEFAULT_SR,
                  control_rate: float = DEFAULT_CONTROL_RATE,
                  uniform_vowel: bool = False,
-                 consonants: bool = True) -> Optional[np.ndarray]:
+                 consonants: bool = True,
+                 vowel_space=None) -> Optional[np.ndarray]:
     inst = piece.instrumentation[inst_idx]
     if inst == Instrument.Sitar:
         return render_sitar(piece, inst_idx, sr, control_rate)
@@ -261,7 +270,8 @@ def render_track(piece, inst_idx: int, sr: float = DEFAULT_SR,
     if inst in (Instrument.Vocal_M, Instrument.Vocal_F):
         return render_vocal(piece, inst_idx, sr, control_rate,
                             uniform_vowel=uniform_vowel,
-                            consonants=consonants)
+                            consonants=consonants,
+                            vowel_space=vowel_space)
     return None
 
 
@@ -271,7 +281,8 @@ def synthesize_piece(piece, out: Optional[str] = None,
                      control_rate: float = DEFAULT_CONTROL_RATE,
                      uniform_vowel: bool = False,
                      track_gains: Optional[Sequence[float]] = None,
-                     consonants: bool = True
+                     consonants: bool = True,
+                     vowel_space=None
                      ) -> np.ndarray:
     """Render a Piece to audio.
 
@@ -287,6 +298,9 @@ def synthesize_piece(piece, out: Optional[str] = None,
             per-track peak normalization.
         consonants: render consonant gestures (closures, bursts, aspiration,
             nasal murmurs) from the trajectories' consonant annotations.
+        vowel_space: optional VowelSpace of formants measured from a
+            singer's own recording (see synthesis.formants); overrides the
+            generic built-in vowel table.
 
     Returns:
         float64 numpy array of mono samples in [-1, 1].
@@ -304,7 +318,8 @@ def synthesize_piece(piece, out: Optional[str] = None,
     for i, idx in enumerate(tracks):
         sig = render_track(piece, idx, sr, control_rate,
                            uniform_vowel=uniform_vowel,
-                           consonants=consonants)
+                           consonants=consonants,
+                           vowel_space=vowel_space)
         if sig is None:
             continue
         peak = float(np.max(np.abs(sig))) if sig.size else 0.0
