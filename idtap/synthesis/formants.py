@@ -157,6 +157,57 @@ def scaled_default_space(voice: str) -> VowelSpace:
                       voice=voice, source='scaled default table')
 
 
+# Speed of sound in the vocal tract, cm/s — the constant relating formant
+# spacing to vocal tract length.
+SOUND_SPEED_CMS = 35000.0
+
+# Physiological range of adult vocal tract length, cm. An estimate outside
+# this is a measurement failure, not an unusual singer.
+PLAUSIBLE_VTL_CM = {'male': (15.0, 19.5), 'female': (12.5, 16.5)}
+
+
+def _delta_f(samples: Sequence[Sequence[float]]) -> Optional[float]:
+    """Mean formant spacing ΔF from pooled (F1,F2,F3) samples.
+
+    For a uniform tube closed at the glottis, Fi = (2i-1)·ΔF/2, so
+    regressing every observed formant against (2i-1) through the origin
+    recovers ΔF without needing to know which vowel was being sung. This is
+    the Reby-style estimator described by Anikin, Barreda & Reby (2023),
+    Behavior Research Methods 56:5588, and it is deliberately label-free:
+    it pools all vowels rather than treating them separately, so it holds up
+    under the extreme vowel imbalance of this repertoire, where almost
+    everything is sung on one vowel.
+    """
+    num = 0.0
+    den = 0.0
+    for row in samples:
+        for i, f in enumerate(row):
+            if f and f > 0:
+                k = 2 * (i + 1) - 1
+                num += k * f
+                den += k * k
+    if den <= 0:
+        return None
+    slope = num / den          # slope = ΔF / 2
+    delta = 2.0 * slope
+    return delta if delta > 0 else None
+
+
+def vocal_tract_length_cm(delta_f: float) -> float:
+    """Vocal tract length implied by a formant spacing."""
+    return SOUND_SPEED_CMS / (2.0 * delta_f)
+
+
+def _template_delta_f() -> float:
+    """ΔF of the built-in (adult-male) vowel table, measured the same way,
+    so a singer's ΔF can be expressed as a ratio against it."""
+    rows = []
+    for v in VOWELS:
+        s0, _ = vowel_targets(v)
+        rows.append(s0[:3])
+    return _delta_f(rows) or 1000.0
+
+
 def _vowel_intervals(piece, inst_idx: int,
                      control_rate: float = 200.0
                      ) -> List[Tuple[str, float, float]]:
@@ -289,11 +340,9 @@ def measure_vowel_space(audio_path: str, piece, inst_idx: int = 0,
         space.targets[vowel] = tuple(base)
         measured.append(vowel)
         if verbose:
-            print(f"  {vowel:>3}: accepted formants "
-                  f"{[f'F{j+1}' for j in accepted]}")
-        if verbose:
-            print(f"  {vowel:>3}: n={len(vals):5d} "
-                  f"F1={f1:6.0f} F2={f2:6.0f} F3={f3:6.0f}")
+            taken = ','.join(f'F{j + 1}' for j in accepted)
+            print(f"  {vowel:>3}: n={len(vals):5d} accepted={taken:<8} "
+                  f"F1={base[0]:6.0f} F2={base[1]:6.0f} F3={base[2]:6.0f}")
     space.counts = counts
     space.measured = tuple(measured)
     space.coverage = (audible / expected) if expected else 0.0
@@ -306,4 +355,120 @@ def measure_vowel_space(audio_path: str, piece, inst_idx: int = 0,
             f"can do this to sustained singing, mistaking it for a drone. "
             f"Try a general-purpose vocal model before trusting these "
             f"formants.", RuntimeWarning, stacklevel=2)
+    return space
+
+
+
+def vowel_space_from_audio(audio_path: str, voice: str = 'male',
+                           f0_percentile: float = 50.0,
+                           verbose: bool = False) -> VowelSpace:
+    """Characterize a singer from audio alone — no transcription needed.
+
+    Instead of measuring each vowel separately (which needs labels saying
+    which vowel is where), this pools formants over all voiced frames and
+    estimates the singer's formant spacing dF, hence vocal tract length.
+    The built-in vowel template is then warped by that ratio.
+
+    That replaces ``scaled_default_space``'s guessed 1.17 female constant
+    with a measurement of the actual singer, while keeping every vowel's
+    relative position from the template — the right trade for this
+    repertoire, where alap, tan and akar are sung on a single vowel by
+    definition, so there is little varied-vowel material to measure even
+    when labels do exist.
+
+    Only the lower part of the singer's range is used: all-pole formant
+    estimation is biased toward the nearest harmonic as f0 rises (JASA
+    134(2):1295), and that bias is measurable in this material.
+
+    Args:
+        audio_path: isolated vocal stem (see SEPARATION_NOTE).
+        voice: 'male' or 'female' — sets the formant ceiling only.
+        f0_percentile: use frames at or below this percentile of the
+            singer's f0 range; lower is less biased but has fewer frames.
+    """
+    try:
+        import parselmouth
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "measuring formants needs parselmouth: "
+            "pip install praat-parselmouth") from exc
+
+    sound = parselmouth.Sound(audio_path)
+    pitch = sound.to_pitch()
+    formant = sound.to_formant_burg(
+        time_step=TIME_STEP, max_number_of_formants=N_FORMANTS,
+        maximum_formant=MAX_FORMANT_HZ[voice],
+        window_length=WINDOW_LENGTH, pre_emphasis_from=PRE_EMPHASIS)
+    intensity = sound.to_intensity(minimum_pitch=75.0)
+
+    levels = sorted(x for x in (intensity.get_value(t)
+                                for t in intensity.xs())
+                    if x is not None and x == x)
+    floor = (levels[int(0.95 * (len(levels) - 1))] - SIGNAL_RANGE_DB
+             if levels else 0.0)
+
+    voiced = [(t, pitch.get_value_at_time(t)) for t in pitch.xs()]
+    f0s = sorted(f for _, f in voiced if f is not None and f == f and f > 0)
+    if not f0s:
+        return scaled_default_space(voice)
+    f0_cut = f0s[int((f0_percentile / 100.0) * (len(f0s) - 1))]
+
+    lo, mid, hi = FORMANT_RANGES[voice]
+    rows: List[Tuple[float, float, float]] = []
+    for t, f0 in voiced:
+        if f0 is None or f0 != f0 or f0 <= 0 or f0 > f0_cut:
+            continue
+        level = intensity.get_value(t) if t <= intensity.xmax else None
+        if level is None or level != level or level < floor:
+            continue
+        f1 = formant.get_value_at_time(1, t)
+        f2 = formant.get_value_at_time(2, t)
+        f3 = formant.get_value_at_time(3, t)
+        if (f1 == f1 and f2 == f2 and f3 == f3
+                and lo[0] <= f1 <= lo[1] and mid[0] <= f2 <= mid[1]
+                and hi[0] <= f3 <= hi[1] and f1 < f2 < f3):
+            rows.append((f1, f2, f3))
+
+    space = scaled_default_space(voice)
+    space.source = audio_path
+    space.counts = {'_voiced_frames': len(rows)}
+    if len(rows) < MIN_INSTANCES:
+        if verbose:
+            print(f"  only {len(rows)} usable voiced frames; keeping default")
+        return space
+
+    delta = _delta_f(rows)
+    if delta is None:
+        return space
+    vtl = vocal_tract_length_cm(delta)
+    lo, hi = PLAUSIBLE_VTL_CM[voice]
+    if not (lo <= vtl <= hi):
+        # Measured on four Hindustani recordings, every estimate landed
+        # outside the physiological range and male and female did not
+        # separate at all — the pooled-formant estimator assumes varied
+        # vowels to average over, and this repertoire sings one vowel for
+        # most of its duration, on top of the harmonic bias in the formant
+        # estimates themselves. Refuse rather than warp the template by a
+        # number known to be wrong.
+        warnings.warn(
+            f"vocal tract length estimated at {vtl:.1f} cm for a {voice} "
+            f"voice, outside the plausible {lo:.0f}-{hi:.0f} cm range. "
+            f"Falling back to the voice-type default. Pooled-formant "
+            f"estimation needs varied vowels, which sustained-vowel "
+            f"singing does not provide.", RuntimeWarning, stacklevel=2)
+        if verbose:
+            print(f"  dF={delta:.0f} Hz -> VTL {vtl:.1f} cm: implausible, "
+                  f"using {voice} default")
+        return space
+    ratio = delta / _template_delta_f()
+    for v in list(space.targets):
+        s0, _ = vowel_targets(v)
+        space.targets[v] = (s0[0] * ratio, s0[1] * ratio, s0[2] * ratio,
+                            s0[3], s0[4], s0[5])
+    space.measured = ('_vtl',)
+    space.coverage = 1.0
+    if verbose:
+        vtl = vocal_tract_length_cm(delta)
+        print(f"  {len(rows)} frames (f0 <= {f0_cut:.0f} Hz), "
+              f"dF={delta:.0f} Hz, VTL={vtl:.1f} cm, scale={ratio:.3f}")
     return space

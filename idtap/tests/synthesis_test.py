@@ -479,6 +479,30 @@ def test_measured_space_supersedes_voice_scaling():
     assert not np.allclose(with_space, default)
 
 
+def test_delta_f_recovers_uniform_tube_length():
+    """A textbook uniform tube must give back its own length."""
+    from idtap.synthesis.formants import (_delta_f, vocal_tract_length_cm)
+    # 17.5 cm tube: F1..F3 = 500, 1500, 2500 Hz
+    delta = _delta_f([(500.0, 1500.0, 2500.0)])
+    assert delta == pytest.approx(1000.0, rel=0.01)
+    assert vocal_tract_length_cm(delta) == pytest.approx(17.5, rel=0.02)
+
+
+def test_implausible_vtl_falls_back_to_voice_default(tmp_path: Path):
+    """An estimate outside physiology must be refused, not applied.
+
+    On real Hindustani recordings this estimator returns male-length tracts
+    for female singers, because pooled-formant estimation assumes varied
+    vowels and this repertoire sustains one.
+    """
+    from idtap.synthesis import formants as F
+    lo, hi = F.PLAUSIBLE_VTL_CM['female']
+    assert lo < hi < F.PLAUSIBLE_VTL_CM['male'][1]
+    # a female voice measuring an 18 cm tract is a failure, not a singer
+    delta_for_18cm = F.SOUND_SPEED_CMS / (2.0 * 18.0)
+    assert not (lo <= F.vocal_tract_length_cm(delta_for_18cm) <= hi)
+
+
 def test_scaled_default_space_raises_female_formants():
     from idtap.synthesis.formants import scaled_default_space
     male = scaled_default_space('male')
