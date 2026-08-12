@@ -293,7 +293,13 @@ def synthesize_piece(piece, out: Optional[str] = None,
     """
     warn_if_slow()
     if tracks is None:
-        tracks = list(range(len(piece.instrumentation)))
+        # legacy transcriptions can declare more instruments than they have
+        # phrase-grid tracks; only render the tracks that carry music
+        n_tracks = len(piece.instrumentation)
+        grid = getattr(piece, 'phrase_grid', None)
+        if grid is not None:
+            n_tracks = min(n_tracks, len(grid))
+        tracks = list(range(n_tracks))
     rendered: List[np.ndarray] = []
     for i, idx in enumerate(tracks):
         sig = render_track(piece, idx, sr, control_rate,

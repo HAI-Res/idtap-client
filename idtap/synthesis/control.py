@@ -75,9 +75,17 @@ class TrackControl:
 
 def extract_track_control(piece, inst_idx: int, string_idx: int = 0,
                           control_rate: float = 200.0) -> TrackControl:
-    """Build control signals for one instrument track / string index."""
-    trajs = piece.all_trajectories(inst_idx, string_idx)
-    starts = piece.traj_start_times(inst_idx, string_idx)
+    """Build control signals for one instrument track / string index.
+
+    Legacy transcriptions can declare more instruments than they have
+    phrase-grid tracks; such a track yields empty control signals rather
+    than raising.
+    """
+    try:
+        trajs = piece.all_trajectories(inst_idx, string_idx)
+        starts = piece.traj_start_times(inst_idx, string_idx)
+    except (IndexError, KeyError):
+        trajs, starts = [], []
     dur_tot = float(piece.dur_tot or 0.0)
     if trajs and starts:
         dur_tot = max(dur_tot, starts[-1] + trajs[-1].dur_tot)

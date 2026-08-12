@@ -444,6 +444,24 @@ def test_consonants_flag_disables_gestures():
     assert np.max(np.abs(on[rel - int(0.04 * SR):rel])) == 0.0
 
 
+def test_more_instruments_than_phrase_tracks():
+    """Legacy transcriptions can declare instruments they have no phrase
+    grid for; those tracks are skipped instead of raising IndexError."""
+    raga = Raga()
+    note = Trajectory({'id': 0, 'pitches': [Pitch()], 'dur_tot': 1.0})
+    phrase = Phrase({'trajectories': [note], 'dur_tot': 1.0, 'raga': raga})
+    piece = Piece({'phrases': [phrase], 'raga': raga,
+                   'instrumentation': [Instrument.Vocal_F,
+                                       Instrument.Sarangi]})
+    assert len(piece.phrase_grid) < len(piece.instrumentation)
+    # the absent track yields empty control signals rather than raising
+    ctrl = extract_track_control(piece, 1, 0, CONTROL_RATE)
+    assert ctrl.spans == []
+    mix = synthesize_piece(piece, sr=22050)
+    assert np.all(np.isfinite(mix))
+    assert np.max(np.abs(mix)) > 0.0
+
+
 def test_unknown_consonant_symbol_is_ignored():
     piece = _consonant_piece('not-a-phone')
     sig = render_track(piece, 0, sr=int(SR), control_rate=CONTROL_RATE)
