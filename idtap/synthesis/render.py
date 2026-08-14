@@ -98,16 +98,37 @@ def _hop(sr: float, control_rate: float) -> float:
 # ---------------------------------------------------------------------------
 
 def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
-                 control_rate: float = DEFAULT_CONTROL_RATE) -> np.ndarray:
+                 control_rate: float = DEFAULT_CONTROL_RATE,
+                 params: Optional[dict] = None,
+                 chikari_freqs: Optional[Sequence[float]] = None
+                 ) -> np.ndarray:
+    """Render a sitar track.
+
+    ``params`` overrides the instrument's tone controls (see
+    synthesis.fitting.SITAR_PARAMS); ``chikari_freqs`` overrides the
+    chikari tuning, which is better measured from the recording than
+    derived from the raga — see idtap-platform#40.
+    """
+    P = params or {}
     ctrl = extract_track_control(piece, inst_idx, 0, control_rate)
     n = _n_samples(ctrl, sr)
     hop = _hop(sr, control_rate)
 
+    bright = P.get('brightness', kernels.KS_BRIGHTNESS)
+    stiff = P.get('stiffness', kernels.KS_STIFFNESS)
+    jaw = P.get('jawari', kernels.JAWARI_DEPTH)
+    jaw_thr = P.get('jawari_threshold', kernels.JAWARI_THRESHOLD)
+
     # main string
     f0 = _forward_fill_f0(ctrl.f0, ctrl.active)
     cutoff = cutoff_curve_with_dampens(ctrl, SITAR_DAMPEN)
+    if 't60_max' in P:
+        # the damping control is a fraction of the ring time, so rescale it
+        scale = P['t60_max'] / kernels.KS_T60_MAX
+        cutoff = np.clip(cutoff * scale, 0.0, 1.0)
     exc = _build_excitation(n, sr, ctrl.bursts, seed_base=inst_idx * 1000 + 1)
-    main = kernels.ks_string(f0, cutoff, exc, float(sr), hop, KS_AMP)
+    main = kernels.ks_string(f0, cutoff, exc, float(sr), hop, KS_AMP,
+                             stiff, bright, jaw, jaw_thr)
     main = kernels.dc_blocker(main, float(sr))
     main = kernels.tracking_lowpass(main, f0 * 8.0, float(sr), hop)
 
@@ -121,29 +142,40 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
         jor_exc = _build_excitation(n, sr, jor_ctrl.bursts,
                                     seed_base=inst_idx * 1000 + 101)
         jor = kernels.ks_string(jor_f0, jor_cut, jor_exc, float(sr), hop,
-                                KS_AMP)
+                                KS_AMP, stiff, bright, jaw, jaw_thr)
         out = out + jor[:out.shape[0]]
 
     # chikari strings: fixed-frequency KS loops strummed at chikari events
-    try:
-        chik_freqs = [f for f in piece.chikari_freqs(inst_idx) if f and f > 0]
-    except Exception:
-        chik_freqs = []
+    if chikari_freqs is not None:
+        chik_freqs = [f for f in chikari_freqs if f and f > 0]
+    else:
+        try:
+            chik_freqs = [f for f in piece.chikari_freqs(inst_idx)
+                          if f and f > 0]
+        except Exception:
+            chik_freqs = []
     if chik_freqs and ctrl.chikari_events:
         order = np.argsort(chik_freqs)  # strum low-to-high
         chik_sum = np.zeros(n, dtype=np.float64)
         for rank, s_idx in enumerate(order):
             freq = chik_freqs[s_idx]
             f0_arr = np.full(ctrl.n_frames, freq, dtype=np.float64)
-            cut_arr = np.full(ctrl.n_frames, CHIKARI_CUTOFF, dtype=np.float64)
+            chik_t60 = P.get('chikari_t60')
+            cut_val = (CHIKARI_CUTOFF if chik_t60 is None
+                       else min(max((chik_t60 - kernels.KS_T60_MIN)
+                                    / (kernels.KS_T60_MAX
+                                       - kernels.KS_T60_MIN), 0.0), 1.0))
+            cut_arr = np.full(ctrl.n_frames, cut_val, dtype=np.float64)
             delayed = []
             for ev in ctrl.chikari_events:
                 delayed.append(type(ev)(time=ev.time + rank * 0.002,
                                         amp=ev.amp, atk=ev.atk, dur=ev.dur))
             s_exc = _build_excitation(
                 n, sr, delayed, seed_base=inst_idx * 1000 + 200 + s_idx)
-            chik = kernels.ks_string(f0_arr, cut_arr, s_exc, float(sr), hop,
-                                     KS_AMP * 0.5)
+            chik = kernels.ks_string(
+                f0_arr, cut_arr, s_exc, float(sr), hop,
+                KS_AMP * P.get('chikari_level', 0.5),
+                stiff, bright, jaw, jaw_thr)
             chik_sum += chik
         chik_sum = kernels.dc_blocker(chik_sum, float(sr))
         out = out + chik_sum
@@ -152,7 +184,10 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
 
 
 def render_sarangi(piece, inst_idx: int, sr: float = DEFAULT_SR,
-                   control_rate: float = DEFAULT_CONTROL_RATE) -> np.ndarray:
+                   control_rate: float = DEFAULT_CONTROL_RATE,
+                   params: Optional[dict] = None) -> np.ndarray:
+    """Render a sarangi track; ``params`` overrides its tone controls
+    (see synthesis.fitting.SARANGI_PARAMS)."""
     ctrl = extract_track_control(piece, inst_idx, 0, control_rate)
     n = _n_samples(ctrl, sr)
     hop = _hop(sr, control_rate)
@@ -161,7 +196,14 @@ def render_sarangi(piece, inst_idx: int, sr: float = DEFAULT_SR,
         f0 = _forward_fill_f0(c.f0, c.active)
         bow = envelope_from_spans(c, ramp=0.01, level=0.5)
         gain = c.gain
-        return kernels.sarangi_string(f0, bow, gain, n, float(sr), hop, seed)
+        P = params or {}
+        return kernels.sarangi_string(
+            f0, bow, gain, n, float(sr), hop, seed,
+            P.get('bow_position', kernels.SARANGI_BOW_POSITION),
+            kernels.SARANGI_N_TARAF,
+            P.get('bridge_damp', kernels.SARANGI_BRIDGE_DAMP),
+            P.get('body_mix', kernels.SARANGI_BODY_MIX),
+            P.get('bow_noise', kernels.SARANGI_BOW_NOISE))
 
     out = _one_string(ctrl, seed=inst_idx * 1000 + 11)
 
