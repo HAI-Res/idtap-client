@@ -39,6 +39,10 @@ class BurstEvent:
     amp: float          # pre-doubling amplitude, as passed to sendBurst
     atk: float = BURST_ATK
     dur: float = BURST_DUR
+    # For a chikari strum: the frequencies of the strings being raked, as
+    # the transcription records them. These are the instrument's actual
+    # tuning and are more reliable than deriving them from the raga.
+    freqs: Optional[Tuple[float, ...]] = None
 
 
 @dataclass
@@ -167,9 +171,17 @@ def extract_track_control(piece, inst_idx: int, string_idx: int = 0,
                     when = p_start + float(key)
                 except (TypeError, ValueError):
                     continue
+                freqs = None
+                try:
+                    pitches = chikaris[key].pitches
+                    freqs = tuple(sorted(
+                        (p.frequency for p in pitches if p is not None),
+                        reverse=True))          # a strum is raked downward
+                except Exception:
+                    freqs = None
                 ctrl.chikari_events.append(
                     BurstEvent(time=when, amp=CHIKARI_BURST_AMP,
-                               atk=CHIKARI_BURST_ATK))
+                               atk=CHIKARI_BURST_ATK, freqs=freqs))
     return ctrl
 
 
@@ -232,5 +244,9 @@ def cutoff_curve_with_dampens(ctrl: TrackControl,
             cur[k] = 0.0
         for k in range(max(k2, 0), min(k3, n - 1) + 1):
             frac = (k / rate - t2) / (t3 - t2)
+            # the recovery ramp is shorter than a control frame, so integer
+            # truncation can put this frame fractionally before the ramp
+            # starts and drive the curve negative
+            frac = min(max(frac, 0.0), 1.0)
             cur[k] = min(cur[k], base_cutoff * frac)
-    return cur
+    return np.clip(cur, 0.0, 1.0)

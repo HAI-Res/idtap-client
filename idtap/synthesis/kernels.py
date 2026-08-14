@@ -370,6 +370,113 @@ SARANGI_BOW_NOISE = 0.02
 SARANGI_BODY_FREQS = np.array([185.0, 275.0, 405.0, 460.0, 530.0,
                                900.0, 1400.0, 2100.0, 3000.0])
 
+
+
+# --- sitar body and sympathetic strings ------------------------------------
+# The gourd and soundboard radiate with their own resonances, which is what
+# shapes one part of the spectrum relative to another. Without them the
+# model can only tilt its output, not shape it.
+SITAR_BODY_FREQS = np.array([120.0, 220.0, 400.0, 750.0, 1400.0, 2600.0])
+SITAR_BODY_QS = np.array([6.0, 8.0, 6.0, 5.0, 4.0, 3.0])
+SITAR_BODY_MIX = 0.25
+# Sympathetic strings, tuned to the raga's scale degrees. They are never
+# played, only excited by the main strings through the bridge, and they go
+# on ringing — which is the halo around a sitar's sound.
+SITAR_TARAF_DRIVE = 0.05
+SITAR_TARAF_T60 = 3.0
+SITAR_TARAF_MIX = 0.35
+
+
+@njit(cache=True)
+def body_resonators(x, freqs, qs, mix, sr):
+    """Parallel resonator bank standing in for the instrument's body."""
+    n = x.shape[0]
+    n_res = freqs.shape[0]
+    out = np.empty(n, dtype=np.float64)
+    b0 = np.zeros(n_res)
+    b1 = np.zeros(n_res)
+    b2 = np.zeros(n_res)
+    a1 = np.zeros(n_res)
+    a2 = np.zeros(n_res)
+    x1 = np.zeros(n_res)
+    x2 = np.zeros(n_res)
+    y1 = np.zeros(n_res)
+    y2 = np.zeros(n_res)
+    nyq = sr * 0.49
+    for j in range(n_res):
+        f = freqs[j]
+        if f > nyq:
+            f = nyq
+        c0, c1, c2, d1, d2 = _biquad_bandpass_coeffs(sr, f, qs[j])
+        b0[j] = c0
+        b1[j] = c1
+        b2[j] = c2
+        a1[j] = d1
+        a2[j] = d2
+    for i in range(n):
+        v = x[i]
+        acc = 0.0
+        for j in range(n_res):
+            y = (b0[j] * v + b1[j] * x1[j] + b2[j] * x2[j]
+                 - a1[j] * y1[j] - a2[j] * y2[j])
+            x2[j] = x1[j]
+            x1[j] = v
+            y2[j] = y1[j]
+            y1[j] = y
+            acc += y
+        out[i] = mix * acc + (1.0 - mix) * v
+    return out
+
+
+@njit(cache=True)
+def sympathetic_bank(drive, freqs, t60, drive_gain, sr):
+    """Undamped strings excited only through the bridge.
+
+    Each is a delay loop tuned to a scale degree, fed a little of the
+    played string's bridge signal and otherwise left to ring.
+    """
+    n = drive.shape[0]
+    n_str = freqs.shape[0]
+    out = np.zeros(n, dtype=np.float64)
+    size = 8192
+    bufs = np.zeros((n_str, size), dtype=np.float64)
+    wps = np.zeros(n_str, dtype=np.int64)
+    lps = np.zeros(n_str, dtype=np.float64)
+    ds = np.zeros(n_str, dtype=np.float64)
+    gs = np.zeros(n_str, dtype=np.float64)
+    for j in range(n_str):
+        f = freqs[j]
+        if f < 20.0:
+            f = 20.0
+        d = sr / f
+        if d > size - 4:
+            d = size - 4.0
+        ds[j] = d
+        gs[j] = 10.0 ** (-3.0 / (f * t60))
+    for i in range(n):
+        acc = 0.0
+        for j in range(n_str):
+            wp = wps[j]
+            rpos = wp - ds[j]
+            if rpos < 0.0:
+                rpos += size
+            r0 = int(rpos)
+            frac = rpos - r0
+            r1 = r0 + 1
+            if r1 >= size:
+                r1 -= size
+            delayed = bufs[j, r0] * (1.0 - frac) + bufs[j, r1] * frac
+            lps[j] = 0.85 * delayed + 0.15 * lps[j]
+            v = drive[i] * drive_gain + gs[j] * lps[j]
+            bufs[j, wp] = v
+            wps[j] = wp + 1
+            if wps[j] >= size:
+                wps[j] = 0
+            acc += v
+        out[i] = acc / n_str
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Sarangi (port of sarangi.worklet.js)
 # ---------------------------------------------------------------------------

@@ -172,6 +172,21 @@ SITAR_PARAMS = [
     Param('t60_max', 4.0, 30.0, 24.0, 'ring time with the string undamped'),
     Param('chikari_level', 0.1, 2.0, 0.5, 'chikari against the main string'),
     Param('chikari_t60', 1.0, 12.0, 4.9, 'chikari ring time'),
+    # Body. Without these the model can only tilt its spectrum, not shape
+    # it — which is what the first fit ran aground on, pinning five of
+    # seven parameters at their bounds trying to match a tilt it could
+    # only reach by damping everything.
+    Param('body_mix', 0.0, 0.7, 0.25, 'gourd and soundboard in the output'),
+    Param('body_f1', 80.0, 200.0, 120.0, 'gourd resonance'),
+    Param('body_f2', 150.0, 350.0, 220.0, 'body resonance'),
+    Param('body_f3', 300.0, 600.0, 400.0, 'body resonance'),
+    Param('body_f4', 550.0, 1100.0, 750.0, 'soundboard resonance'),
+    Param('body_f5', 1000.0, 2000.0, 1400.0, 'soundboard resonance'),
+    Param('body_f6', 2000.0, 4000.0, 2600.0, 'soundboard resonance'),
+    # Sympathetic strings, tuned by the raga rather than fitted.
+    Param('taraf_mix', 0.0, 1.0, 0.35, 'sympathetic strings in the output'),
+    Param('taraf_drive', 0.0, 0.2, 0.05, 'how hard the bridge drives them'),
+    Param('taraf_t60', 0.5, 8.0, 3.0, 'how long they ring'),
 ]
 
 SARANGI_PARAMS = [

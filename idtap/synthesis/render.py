@@ -27,6 +27,12 @@ SITAR_DAMPEN = 0.5           # loop-filter cutoff (web control default)
 # struck as punctuation. At the web app's value they rang for 16.8 s —
 # longer than the main string — so 419 strums smeared into a wash.
 CHIKARI_CUTOFF = 0.2
+# How far apart the rake reaches successive strings. A chikari strum is a
+# flick of the little finger, not a strummed chord — the strings sound
+# almost together. Varying it per strum is most of what stops hundreds of
+# them sounding mechanical.
+CHIKARI_STRUM_MIN = 0.003
+CHIKARI_STRUM_MAX = 0.009
 KS_AMP = 8.0
 OUT_GAIN_COMP = 0.707        # -3 dB compensation (web outGain scaling)
 KLATT_FLUTTER = 0.15         # Synths.vue sets 0.15 at playback
@@ -146,19 +152,52 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
         out = out + jor[:out.shape[0]]
 
     # chikari strings: fixed-frequency KS loops strummed at chikari events
+    # Chikari tuning: what the transcription says this instrument was
+    # tuned to, falling back to the raga only if it says nothing.
+    per_event = [e for e in ctrl.chikari_events if e.freqs]
     if chikari_freqs is not None:
-        chik_freqs = [f for f in chikari_freqs if f and f > 0]
+        chik_freqs = sorted((f for f in chikari_freqs if f and f > 0),
+                            reverse=True)
+    elif per_event:
+        chik_freqs = list(per_event[0].freqs)
     else:
         try:
-            chik_freqs = [f for f in piece.chikari_freqs(inst_idx)
-                          if f and f > 0]
+            chik_freqs = sorted((f for f in piece.chikari_freqs(inst_idx)
+                                 if f and f > 0), reverse=True)
         except Exception:
             chik_freqs = []
     if chik_freqs and ctrl.chikari_events:
-        order = np.argsort(chik_freqs)  # strum low-to-high
+        rng = np.random.default_rng(inst_idx * 7717 + 5)
+        n_str = len(chik_freqs)
+        # one excitation buffer per string, built from all the strums
+        per_string = [[] for _ in range(n_str)]
+        for ev in ctrl.chikari_events:
+            freqs = list(ev.freqs) if ev.freqs else chik_freqs
+            # How many strings the finger caught: usually all of them,
+            # sometimes just the top pair. Never only one — a single
+            # chikari does not read as a strum.
+            n_hit = int(rng.choice([2, n_str], p=[0.3, 0.7])) \
+                if n_str > 2 else n_str
+            n_hit = min(n_hit, len(freqs))
+            spread = float(rng.uniform(CHIKARI_STRUM_MIN,
+                                       CHIKARI_STRUM_MAX))
+            level = float(rng.uniform(0.75, 1.25))
+            for rank in range(n_hit):
+                f = freqs[rank]
+                try:
+                    idx = chik_freqs.index(f)
+                except ValueError:
+                    idx = min(rank, n_str - 1)
+                # the rake reaches each string a little later, and the
+                # finger loses energy as it crosses
+                per_string[idx].append(type(ev)(
+                    time=ev.time + rank * spread,
+                    amp=ev.amp * level * (1.0 - 0.12 * rank),
+                    atk=ev.atk, dur=ev.dur))
         chik_sum = np.zeros(n, dtype=np.float64)
-        for rank, s_idx in enumerate(order):
-            freq = chik_freqs[s_idx]
+        for s_idx, freq in enumerate(chik_freqs):
+            if not per_string[s_idx]:
+                continue
             f0_arr = np.full(ctrl.n_frames, freq, dtype=np.float64)
             chik_t60 = P.get('chikari_t60')
             cut_val = (CHIKARI_CUTOFF if chik_t60 is None
@@ -166,12 +205,9 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
                                     / (kernels.KS_T60_MAX
                                        - kernels.KS_T60_MIN), 0.0), 1.0))
             cut_arr = np.full(ctrl.n_frames, cut_val, dtype=np.float64)
-            delayed = []
-            for ev in ctrl.chikari_events:
-                delayed.append(type(ev)(time=ev.time + rank * 0.002,
-                                        amp=ev.amp, atk=ev.atk, dur=ev.dur))
             s_exc = _build_excitation(
-                n, sr, delayed, seed_base=inst_idx * 1000 + 200 + s_idx)
+                n, sr, per_string[s_idx],
+                seed_base=inst_idx * 1000 + 200 + s_idx)
             chik = kernels.ks_string(
                 f0_arr, cut_arr, s_exc, float(sr), hop,
                 KS_AMP * P.get('chikari_level', 0.5),
@@ -179,6 +215,36 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
             chik_sum += chik
         chik_sum = kernels.dc_blocker(chik_sum, float(sr))
         out = out + chik_sum
+
+    # Sympathetic strings. A sitar carries eleven to thirteen taraf, tuned
+    # to the raga being played — a sitarist retunes them when changing raga
+    # — and they are never plucked, only set ringing through the bridge.
+    # The raga supplies the tuning, so this follows the transcription.
+    taraf_mix = P.get('taraf_mix', kernels.SITAR_TARAF_MIX)
+    if taraf_mix > 0:
+        try:
+            sa = piece.raga.fundamental
+            freqs = sorted(piece.raga.get_frequencies(low=sa * 0.95,
+                                                      high=sa * 4.1))[:13]
+        except Exception:
+            freqs = []
+        if freqs:
+            symp = kernels.sympathetic_bank(
+                out, np.asarray(freqs, dtype=np.float64),
+                P.get('taraf_t60', kernels.SITAR_TARAF_T60),
+                P.get('taraf_drive', kernels.SITAR_TARAF_DRIVE), float(sr))
+            out = out + taraf_mix * symp
+
+    # the gourd and soundboard
+    body_mix = P.get('body_mix', kernels.SITAR_BODY_MIX)
+    if body_mix > 0:
+        freqs = kernels.SITAR_BODY_FREQS.copy()
+        for j, key in enumerate(('body_f1', 'body_f2', 'body_f3',
+                                 'body_f4', 'body_f5', 'body_f6')):
+            if key in P:
+                freqs[j] = P[key]
+        out = kernels.body_resonators(out, freqs, kernels.SITAR_BODY_QS,
+                                      body_mix, float(sr))
 
     return out * OUT_GAIN_COMP
 
