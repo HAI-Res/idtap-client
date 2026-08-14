@@ -98,9 +98,18 @@ def pink_burst(n, attack_n, amp, seed):
         b5 = -0.7616 * b5 - white * 0.0168980
         out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11
         b6 = white * 0.115926
+    # Pluck envelope: a fast attack and then a taper to zero. The worklet
+    # ramped up across the whole burst and cut off at the end, because its
+    # default attack was longer than the burst itself — the reverse of a
+    # pluck, and a discontinuity where the burst stops.
     ramp_n = attack_n if attack_n < n else n
+    if ramp_n < 1:
+        ramp_n = 1
     for i in range(ramp_n):
         out[i] *= i / ramp_n
+    for i in range(ramp_n, n):
+        frac = (i - ramp_n) / (n - ramp_n) if n > ramp_n else 1.0
+        out[i] *= 1.0 - frac
     mean = 0.0
     for i in range(n):
         mean += out[i]
@@ -295,7 +304,7 @@ SARANGI_BOW_POSITION = 0.13
 # Bridge reflection: lossy and inverting. Below unity so the string decays
 # when the bow leaves it.
 SARANGI_BRIDGE_GAIN = 0.985
-SARANGI_BRIDGE_DAMP = 0.45      # how dark the bridge reflection is
+SARANGI_BRIDGE_DAMP = 0.25      # fitted to the recording's spectrum
 SARANGI_NUT_GAIN = 0.99
 # Bow speed at full bow control, and the slope of the friction curve, which
 # together set how readily the hair breaks away into slipping.
@@ -307,8 +316,17 @@ SARANGI_N_TARAF = 11
 SARANGI_TARAF_DRIVE = 0.06      # how hard the bridge drives them
 SARANGI_TARAF_T60 = 2.5         # seconds; they ring on undamped
 SARANGI_TARAF_MIX = 0.5
-SARANGI_BODY_MIX = 0.35         # parchment belly resonance in the output
+SARANGI_BODY_MIX = 0.15         # fitted; the old value boomed the low mids
 SARANGI_OUT_GAIN = 2.0
+# Bow-hair noise level. Bowing gut is a noisy business and that noise
+# carries much of the instrument's identity; a friction curve alone gives
+# an unnaturally pure tone.
+SARANGI_BOW_NOISE = 0.02
+# Body resonances of the parchment belly. The worklet modelled only
+# 185-530 Hz, which boosts the low mids and nothing else; a real belly
+# radiates well above that.
+SARANGI_BODY_FREQS = np.array([185.0, 275.0, 405.0, 460.0, 530.0,
+                               900.0, 1400.0, 2100.0, 3000.0])
 
 # ---------------------------------------------------------------------------
 # Sarangi (port of sarangi.worklet.js)
@@ -347,7 +365,10 @@ def _bow_friction(delta_v, force):
 @njit(cache=True)
 def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed,
                    bow_position=SARANGI_BOW_POSITION,
-                   n_sympathetic=SARANGI_N_TARAF):
+                   n_sympathetic=SARANGI_N_TARAF,
+                   bridge_damp=SARANGI_BRIDGE_DAMP,
+                   body_mix=SARANGI_BODY_MIX,
+                   bow_noise=SARANGI_BOW_NOISE):
     """Bowed sarangi string: friction-driven digital waveguide.
 
     The worklet this replaces excited a feedback loop with bandpassed
@@ -377,8 +398,8 @@ def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed,
     bridge_lp = 0.0
 
     # body resonances (the sarangi's parchment belly), as in the original
-    res_freqs = np.array([185.0, 275.0, 405.0, 460.0, 530.0])
-    n_res = 5
+    res_freqs = SARANGI_BODY_FREQS
+    n_res = res_freqs.shape[0]
     rc = np.zeros((n_res, 5), dtype=np.float64)
     for j in range(n_res):
         b0, b1, b2, a1, a2 = _biquad_bandpass_coeffs(sr, res_freqs[j], 1.0)
@@ -443,8 +464,8 @@ def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed,
         from_neck = neck[r0] * (1.0 - frac) + neck[r1] * frac
 
         # bridge is lossy and inverting, nut is a near-perfect inversion
-        bridge_lp = (1.0 - SARANGI_BRIDGE_DAMP) * from_bridge \
-            + SARANGI_BRIDGE_DAMP * bridge_lp
+        bridge_lp = (1.0 - bridge_damp) * from_bridge \
+            + bridge_damp * bridge_lp
         refl_bridge = -SARANGI_BRIDGE_GAIN * bridge_lp
         refl_neck = -SARANGI_NUT_GAIN * from_neck
 
@@ -454,6 +475,10 @@ def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed,
         delta_v = bow_vel - string_vel
         coeff = _bow_friction(delta_v, SARANGI_FRICTION_SLOPE)
         injected = delta_v * coeff
+        # bow hair against gut is audibly noisy, and that noise is a large
+        # part of what identifies the instrument
+        if bow_noise > 0.0 and bow > 0.0:
+            injected += (np.random.random() * 2.0 - 1.0) * bow_noise * bow
 
         neck[wp_n] = refl_bridge + injected
         bridge[wp_b] = refl_neck + injected
@@ -506,7 +531,7 @@ def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed,
             ry2[j] = ry1[j]
             ry1[j] = y
             res += y
-        body = SARANGI_BODY_MIX * res + (1.0 - SARANGI_BODY_MIX) * sig
+        body = body_mix * res + (1.0 - body_mix) * sig
 
         out[i] = body * _ctrl_interp(gain_ctrl, i, hop) * SARANGI_OUT_GAIN
     return out

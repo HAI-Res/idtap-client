@@ -23,9 +23,12 @@ ARTICULATION_BURST_AMPS = {
     'slide': 0.1,
 }
 BURST_DUR = 0.01     # seconds (sendBurst default)
-BURST_ATK = 0.05     # seconds (sendBurst default; ramp is clipped to dur)
+BURST_ATK = 0.0015   # seconds; a pluck is percussive
 CHIKARI_BURST_AMP = 0.2
-CHIKARI_BURST_ATK = 0.025
+# A chikari is struck, not swelled: the attack has to be percussive. The
+# web app asked for 25 ms over a 10 ms burst, which just ramped the whole
+# burst upward.
+CHIKARI_BURST_ATK = 0.0008
 CHIKARI_STRUM_DELAY = 0.0025
 
 

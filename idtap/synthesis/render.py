@@ -23,7 +23,10 @@ DEFAULT_SR = 44100
 DEFAULT_CONTROL_RATE = 200.0
 
 SITAR_DAMPEN = 0.5           # loop-filter cutoff (web control default)
-CHIKARI_CUTOFF = 0.7
+# Chikari ring shorter than the main string: they are thin high strings,
+# struck as punctuation. At the web app's value they rang for 16.8 s —
+# longer than the main string — so 419 strums smeared into a wash.
+CHIKARI_CUTOFF = 0.2
 KS_AMP = 8.0
 OUT_GAIN_COMP = 0.707        # -3 dB compensation (web outGain scaling)
 KLATT_FLUTTER = 0.15         # Synths.vue sets 0.15 at playback
