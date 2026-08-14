@@ -53,8 +53,11 @@ def _ctrl_hold(arr, i, hop):
 # unity at both extremes, so the loop is stable however it is driven: a
 # freely ringing string decays slowly, a damped one quickly, and neither
 # can accumulate.
-KS_T60_MAX = 7.0          # seconds to -60 dB with the string ringing freely
-KS_T60_MIN = 0.15         # seconds to -60 dB with the string fully damped
+# Seconds to -60 dB. A sitar's main string rings for a long time — the note
+# has to carry across a whole meend — so the free end of this range is much
+# longer than a guitar's would be.
+KS_T60_MAX = 24.0         # ringing freely
+KS_T60_MIN = 0.15         # fully damped, i.e. a hand on the string
 # Stiffness allpass coefficient. Real strings are dispersive — high
 # partials travel faster — which stretches the harmonic series and gives a
 # plucked steel string its shimmer. 0 disables it.
@@ -284,6 +287,29 @@ def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp,
     return out
 
 
+
+# --- bowed sarangi string -------------------------------------------------
+# Where the bow crosses the string, as a fraction of its length from the
+# bridge. Sarangi bowing sits close to the bridge, which brightens the tone.
+SARANGI_BOW_POSITION = 0.13
+# Bridge reflection: lossy and inverting. Below unity so the string decays
+# when the bow leaves it.
+SARANGI_BRIDGE_GAIN = 0.985
+SARANGI_BRIDGE_DAMP = 0.45      # how dark the bridge reflection is
+SARANGI_NUT_GAIN = 0.99
+# Bow speed at full bow control, and the slope of the friction curve, which
+# together set how readily the hair breaks away into slipping.
+SARANGI_BOW_SPEED = 0.22
+SARANGI_FRICTION_SLOPE = 3.0
+# Sympathetic strings. A real sarangi has dozens; a smaller bank tuned to
+# scale degrees gives the same halo far more cheaply.
+SARANGI_N_TARAF = 11
+SARANGI_TARAF_DRIVE = 0.06      # how hard the bridge drives them
+SARANGI_TARAF_T60 = 2.5         # seconds; they ring on undamped
+SARANGI_TARAF_MIX = 0.5
+SARANGI_BODY_MIX = 0.35         # parchment belly resonance in the output
+SARANGI_OUT_GAIN = 2.0
+
 # ---------------------------------------------------------------------------
 # Sarangi (port of sarangi.worklet.js)
 # ---------------------------------------------------------------------------
@@ -300,31 +326,57 @@ def _biquad_bandpass_coeffs(sr, freq, q):
 
 
 @njit(cache=True)
-def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed):
-    """Bowed 'filter-feedback' sarangi string, port of sarangi.worklet.js.
+def _bow_friction(delta_v, force):
+    """Bow-hair friction as a function of bow-string velocity difference.
 
-    Two half-period delay lines in a 0.98-gain feedback loop, excited by
-    bandpassed white noise scaled by bow_ctrl; output through 5 parallel
-    body bandpass resonators and a 10 kHz notch, scaled by gain_ctrl.
+    The bow alternately sticks to the string and slips, and it is that
+    stick-slip cycle — not any filtered noise — that makes a bowed string
+    speak. While the relative velocity is small the hair grips and the
+    string is dragged with the bow; past a breakaway velocity the grip
+    collapses and friction falls off steeply. This is the standard
+    memoryless friction curve of McIntyre, Schumacher & Woodhouse (1983),
+    in the form Smith uses for the digital waveguide bow.
+    """
+    a = abs(delta_v * force)
+    c = (a + 0.75) ** -4.0
+    if c > 1.0:
+        c = 1.0
+    return c
+
+
+@njit(cache=True)
+def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed,
+                   bow_position=SARANGI_BOW_POSITION,
+                   n_sympathetic=SARANGI_N_TARAF):
+    """Bowed sarangi string: friction-driven digital waveguide.
+
+    The worklet this replaces excited a feedback loop with bandpassed
+    noise, which is not bowing — it is a resonator hissed at, and it can
+    never produce Helmholtz motion. Here the string is two waveguide
+    delay lines meeting at the bow, and the bow is a nonlinear scattering
+    junction between them: at every sample the friction curve decides
+    whether the hair is gripping the string or slipping across it. The
+    sawtooth-like Helmholtz corner that gives a bowed string its tone
+    emerges from that, as it does on the instrument.
+
+    A sarangi also carries dozens of undamped sympathetic strings, and
+    the resulting halo is most of what makes it recognizable, so a bank of
+    them is driven from the bridge.
+
+    ``bow_ctrl`` is bow force/speed (0 = off the string), ``gain_ctrl``
+    the output level.
     """
     np.random.seed(seed)
     out = np.empty(n, dtype=np.float64)
     size = 8192
-    d1 = np.zeros(size, dtype=np.float64)
-    d2 = np.zeros(size, dtype=np.float64)
-    wp1 = 0
-    wp2 = 0
-    smooth_y1 = 0.0
-    feedback_gain = 0.98
+    # string either side of the bow: nut-side and bridge-side
+    neck = np.zeros(size, dtype=np.float64)
+    bridge = np.zeros(size, dtype=np.float64)
+    wp_n = 0
+    wp_b = 0
+    bridge_lp = 0.0
 
-    # noise bandpass (the worklet constructed this at 1000 Hz, Q=1)
-    nb0, nb1, nb2, na1, na2 = _biquad_bandpass_coeffs(sr, 1000.0, 1.0)
-    nx1 = 0.0
-    nx2 = 0.0
-    ny1 = 0.0
-    ny2 = 0.0
-
-    # body resonators
+    # body resonances (the sarangi's parchment belly), as in the original
     res_freqs = np.array([185.0, 275.0, 405.0, 460.0, 530.0])
     n_res = 5
     rc = np.zeros((n_res, 5), dtype=np.float64)
@@ -340,70 +392,37 @@ def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed):
     ry1 = np.zeros(n_res, dtype=np.float64)
     ry2 = np.zeros(n_res, dtype=np.float64)
 
-    # 10 kHz notch, bw 1.4 octaves (worklet's BiquadFilter.notch formula)
-    notch_f = 10000.0
-    if notch_f > sr * 0.45:
-        notch_f = sr * 0.45
-    omega0 = 2.0 * math.pi * notch_f / sr
-    alpha = math.sin(omega0) * math.sinh(
-        math.log(2.0) / 2.0 * 1.4 * omega0 / math.sin(omega0))
-    a0 = 1.0 + alpha
-    tb0 = 1.0 / a0
-    tb1 = -2.0 * math.cos(omega0) / a0
-    tb2 = 1.0 / a0
-    ta1 = -2.0 * math.cos(omega0) / a0
-    ta2 = (1.0 - alpha) / a0
-    tx1 = 0.0
-    tx2 = 0.0
-    ty1 = 0.0
-    ty2 = 0.0
+    # sympathetic strings: comb resonators fed from the bridge, tuned to
+    # scale degrees around the played fundamental
+    ratios = np.array([0.5, 0.5625, 0.6667, 0.75, 0.8333, 1.0,
+                       1.125, 1.3333, 1.5, 1.6667, 2.0])
+    n_symp = n_sympathetic
+    if n_symp > 11:
+        n_symp = 11
+    symp = np.zeros((11, size), dtype=np.float64)
+    symp_wp = np.zeros(11, dtype=np.int64)
+    symp_lp = np.zeros(11, dtype=np.float64)
 
-    # smoothing filter (0.4 one-pole) phase-delay compensation constant
-    smooth_b = 0.6
     for i in range(n):
         f0 = _ctrl_interp(f0_ctrl, i, hop)
         if f0 < 20.0:
             f0 = 20.0
-        w = 2.0 * math.pi * f0 / sr
-        theta = math.atan2(smooth_b * math.sin(w),
-                           1.0 - smooth_b * math.cos(w))
-        pd = theta / w
-        # each line carries half the period; +0.5 because the total loop is
-        # 2d-1 samples (d1 is written and read within the same iteration)
-        d = (sr / f0 - pd + 1.0) * 0.5
-        if d > size - 4:
-            d = size - 4.0
-        if d < 2.0:
-            d = 2.0
-
-        # read delay 2 (fractional)
-        rpos = wp2 - d
-        if rpos < 0.0:
-            rpos += size
-        r0 = int(rpos)
-        frac = rpos - r0
-        r1 = r0 + 1
-        if r1 >= size:
-            r1 -= size
-        del2 = d2[r0] * (1.0 - frac) + d2[r1] * frac
-
-        # bow noise
-        white = np.random.random() * 2.0 - 1.0
-        noise = nb0 * white + nb1 * nx1 + nb2 * nx2 - na1 * ny1 - na2 * ny2
-        nx2 = nx1
-        nx1 = white
-        ny2 = ny1
-        ny1 = noise
-
         bow = _ctrl_interp(bow_ctrl, i, hop)
-        fb = noise * bow + del2 * feedback_gain
-        d1[wp1] = fb
-        wp1 += 1
-        if wp1 >= size:
-            wp1 = 0
+        if bow < 0.0:
+            bow = 0.0
 
-        # read delay 1 (fractional)
-        rpos = wp1 - d
+        period = sr / f0
+        d_bridge = period * bow_position
+        d_neck = period - d_bridge
+        if d_bridge < 2.0:
+            d_bridge = 2.0
+        if d_neck < 2.0:
+            d_neck = 2.0
+        if d_neck > size - 4:
+            d_neck = size - 4.0
+
+        # travelling waves arriving at the bow from each side
+        rpos = wp_b - d_bridge
         if rpos < 0.0:
             rpos += size
         r0 = int(rpos)
@@ -411,33 +430,85 @@ def sarangi_string(f0_ctrl, bow_ctrl, gain_ctrl, n, sr, hop, seed):
         r1 = r0 + 1
         if r1 >= size:
             r1 -= size
-        del1 = d1[r0] * (1.0 - frac) + d1[r1] * frac
+        from_bridge = bridge[r0] * (1.0 - frac) + bridge[r1] * frac
 
-        smooth_y1 = 0.4 * del1 + 0.6 * smooth_y1
-        d2[wp2] = smooth_y1
-        wp2 += 1
-        if wp2 >= size:
-            wp2 = 0
+        rpos = wp_n - d_neck
+        if rpos < 0.0:
+            rpos += size
+        r0 = int(rpos)
+        frac = rpos - r0
+        r1 = r0 + 1
+        if r1 >= size:
+            r1 -= size
+        from_neck = neck[r0] * (1.0 - frac) + neck[r1] * frac
 
-        # body resonators on del2
+        # bridge is lossy and inverting, nut is a near-perfect inversion
+        bridge_lp = (1.0 - SARANGI_BRIDGE_DAMP) * from_bridge \
+            + SARANGI_BRIDGE_DAMP * bridge_lp
+        refl_bridge = -SARANGI_BRIDGE_GAIN * bridge_lp
+        refl_neck = -SARANGI_NUT_GAIN * from_neck
+
+        # the bow: stick or slip, decided every sample
+        string_vel = refl_bridge + refl_neck
+        bow_vel = bow * SARANGI_BOW_SPEED
+        delta_v = bow_vel - string_vel
+        coeff = _bow_friction(delta_v, SARANGI_FRICTION_SLOPE)
+        injected = delta_v * coeff
+
+        neck[wp_n] = refl_bridge + injected
+        bridge[wp_b] = refl_neck + injected
+        wp_n += 1
+        if wp_n >= size:
+            wp_n = 0
+        wp_b += 1
+        if wp_b >= size:
+            wp_b = 0
+
+        # bridge force drives body and sympathetic strings
+        drive = refl_bridge
+
+        symp_sum = 0.0
+        for s in range(n_symp):
+            sd = period / ratios[s]
+            if sd < 2.0:
+                sd = 2.0
+            if sd > size - 4:
+                sd = size - 4.0
+            wp_s = symp_wp[s]
+            rpos = wp_s - sd
+            if rpos < 0.0:
+                rpos += size
+            r0 = int(rpos)
+            frac = rpos - r0
+            r1 = r0 + 1
+            if r1 >= size:
+                r1 -= size
+            sv = symp[s, r0] * (1.0 - frac) + symp[s, r1] * frac
+            symp_lp[s] = 0.7 * sv + 0.3 * symp_lp[s]
+            g_s = 10.0 ** (-3.0 / ((f0 * ratios[s]) * SARANGI_TARAF_T60))
+            val = drive * SARANGI_TARAF_DRIVE + g_s * symp_lp[s]
+            symp[s, wp_s] = val
+            symp_wp[s] = wp_s + 1
+            if symp_wp[s] >= size:
+                symp_wp[s] = 0
+            symp_sum += val
+        if n_symp > 0:
+            symp_sum /= n_symp
+
+        sig = drive + SARANGI_TARAF_MIX * symp_sum
+
         res = 0.0
         for j in range(n_res):
-            y = (rc[j, 0] * del2 + rc[j, 1] * rx1[j] + rc[j, 2] * rx2[j]
+            y = (rc[j, 0] * sig + rc[j, 1] * rx1[j] + rc[j, 2] * rx2[j]
                  - rc[j, 3] * ry1[j] - rc[j, 4] * ry2[j])
             rx2[j] = rx1[j]
-            rx1[j] = del2
+            rx1[j] = sig
             ry2[j] = ry1[j]
             ry1[j] = y
             res += y
-        res *= 0.2
+        body = SARANGI_BODY_MIX * res + (1.0 - SARANGI_BODY_MIX) * sig
 
-        y = tb0 * res + tb1 * tx1 + tb2 * tx2 - ta1 * ty1 - ta2 * ty2
-        tx2 = tx1
-        tx1 = res
-        ty2 = ty1
-        ty1 = y
-
-        out[i] = y * _ctrl_interp(gain_ctrl, i, hop)
+        out[i] = body * _ctrl_interp(gain_ctrl, i, hop) * SARANGI_OUT_GAIN
     return out
 
 

@@ -116,7 +116,7 @@ def test_string_decay_follows_its_control():
     normal = _t60(146.8, 0.5)
     damped = _t60(146.8, 0.0)
     assert free > normal > damped
-    assert 1.5 < normal < 5.0        # a plucked string, not a blip or a drone
+    assert 6.0 < normal < 20.0       # a sitar rings, it does not plink
     assert damped < 0.5              # a dampen stops the note
 
 
@@ -154,6 +154,42 @@ def test_ks_string_tuning(target):
     seg = y[int(SR * 0.25):int(SR * 1.95)]
     peak = _spectral_peak(seg, SR, target * 0.8, target * 1.2)
     assert abs(_cents(peak, target)) < 3.0
+
+
+def test_sarangi_is_bowed_not_hissed():
+    """The bow must drive the string into Helmholtz motion.
+
+    The worklet this replaced excited a resonator with bandpassed noise,
+    which cannot produce stick-slip motion however it is tuned. A bowed
+    string locks into a steady harmonic series; noise does not.
+    """
+    n = int(SR * 3)
+    nf = int(n / HOP) + 2
+    y = kernels.sarangi_string(np.full(nf, 220.0), np.full(nf, 0.5),
+                               np.full(nf, 1.0), n, SR, HOP, 7)
+    assert np.all(np.isfinite(y))
+    seg = y[int(SR * 1.2):]
+    spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg)))) ** 2
+    freqs = np.fft.rfftfreq(len(seg), 1 / SR)
+    harmonic = 0.0
+    for k in range(1, 13):
+        m = (freqs > 220.0 * k * 0.985) & (freqs < 220.0 * k * 1.015)
+        harmonic += float(spec[m].sum())
+    assert harmonic / float(spec.sum()) > 0.8   # a tone, not a hiss
+    # and the level holds steady, as a bowed note does
+    w = int(0.05 * SR)
+    m = len(seg) // w * w
+    rms = np.sqrt((seg[:m].reshape(-1, w) ** 2).mean(axis=1))
+    assert rms.std() / rms.mean() < 0.15
+
+
+def test_no_bow_no_sound():
+    """Lifting the bow stops the note; the old model hissed regardless."""
+    n = int(SR * 1.5)
+    nf = int(n / HOP) + 2
+    y = kernels.sarangi_string(np.full(nf, 220.0), np.zeros(nf),
+                               np.full(nf, 1.0), n, SR, HOP, 7)
+    assert np.max(np.abs(y)) == 0.0
 
 
 def test_sarangi_string_tuning():
