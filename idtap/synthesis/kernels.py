@@ -62,8 +62,14 @@ KS_T60_MIN = 0.15         # fully damped, i.e. a hand on the string
 # partials travel faster — which stretches the harmonic series and gives a
 # plucked steel string its shimmer. 0 disables it.
 KS_STIFFNESS = 0.22
-# Loop lowpass coefficient at full ring; higher is darker.
-KS_BRIGHTNESS = 0.35
+# Loop lowpass coefficient at full ring; higher is darker. This filter is
+# applied once per round trip — some 700 times during a 2.5 s note — so its
+# effect compounds enormously. At 0.35 it attenuated 2 kHz by 118 dB over a
+# single note, annihilating the upper spectrum and leaving the render 12 dB
+# short exactly where the real instrument peaks. Kept small so that high
+# partials decay faster than low ones, as on a real string, without being
+# erased.
+KS_BRIGHTNESS = 0.05
 
 
 @njit(cache=True)
@@ -186,13 +192,36 @@ def tracking_lowpass(x, freq_ctrl, sr, hop):
     return out
 
 
+
+# --- jawari (the sitar's curved bridge) ------------------------------------
+# The string does not terminate at a point: it grazes a broad curved bridge.
+# As it swings toward the bridge it wraps onto that curve, and the point at
+# which it is effectively stopped TRAVELS along the curve with the string's
+# displacement. So the sounding length is not fixed — it shortens and
+# lengthens once per cycle, and shortens more when the note is loud.
+#
+# That moving termination is the mechanism: it redistributes energy up the
+# partial series rather than removing it, produces the buzz (the length
+# modulates at the vibration rate), and produces the descending sweep as
+# the note decays and the contact point retreats. A waveshaper at the
+# bridge cannot do this — it only compresses peaks, which makes some
+# harmonics but by throwing energy away.
+#
+# Raman (1921) identified the mechanism; Siddiq (2012) and van Walstijn
+# model it properly as distributed contact. This is the cheap form of the
+# same idea: modulate the delay length by the instantaneous displacement.
+JAWARI_DEPTH = 0.06         # how far the contact point travels; 0 disables
+JAWARI_THRESHOLD = 0.02     # displacement at which the string first touches
+
+
 # ---------------------------------------------------------------------------
 # Karplus-Strong string (sitar main/jor string, chikari strings)
 # ---------------------------------------------------------------------------
 
 @njit(cache=True)
 def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp,
-              stiffness=KS_STIFFNESS, brightness=KS_BRIGHTNESS):
+              stiffness=KS_STIFFNESS, brightness=KS_BRIGHTNESS,
+              jawari=JAWARI_DEPTH, jawari_threshold=JAWARI_THRESHOLD):
     """Extended Karplus-Strong plucked string (Jaffe & Smith 1983).
 
     The worklet's loop could not be made safe by tuning it: its loop filter
@@ -220,6 +249,7 @@ def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp,
     buf = np.zeros(size, dtype=np.float64)
     wp = 0
     lp = 0.0            # loop lowpass state
+    last_out = 0.0      # previous loop sample = displacement at the bridge
     ap_x1 = 0.0         # allpass input history
     ap_y1 = 0.0         # allpass output history
     two_pi = 2.0 * math.pi
@@ -267,6 +297,17 @@ def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp,
         if d > size - 4:
             d = size - 4.0
 
+        # The bridge: the string wraps onto the curve, so the length that
+        # is actually sounding shortens with displacement. Modulating the
+        # delay at the vibration rate is what buzzes; the shortening being
+        # larger when loud is what makes the sweep as the note decays.
+        if jawari > 0.0:
+            press = last_out - jawari_threshold
+            if press > 0.0:
+                d -= d * jawari * press
+                if d < 2.0:
+                    d = 2.0
+
         rpos = wp - d
         if rpos < 0.0:
             rpos += size
@@ -289,6 +330,7 @@ def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp,
         lp = (1.0 - b) * delayed + b * lp
         x = excitation[i] + g * lp
         buf[wp] = x
+        last_out = x
         wp += 1
         if wp >= size:
             wp = 0
