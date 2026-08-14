@@ -78,8 +78,67 @@ def test_pink_burst_deterministic():
     assert b1.shape == (441,)
     assert np.array_equal(b1, b2)
     assert not np.array_equal(b1, b3)
-    assert b1[0] == 0.0  # attack ramp starts at zero
     assert np.max(np.abs(b1)) > 0
+    # the attack still ramps in: the opening is far quieter than the body
+    assert np.abs(b1[:20]).mean() < 0.4 * np.abs(b1).max()
+
+
+def test_pink_burst_has_no_dc():
+    """A pluck cannot displace the string on average, and the string loop
+    integrates DC forever, so the excitation must carry none."""
+    for seed in (1, 42, 1234):
+        b = kernels.pink_burst(1000, 100, 1.0, seed)
+        assert abs(b.mean()) < 1e-12 * max(np.abs(b).max(), 1.0)
+
+
+def _t60(f0, ctrl_val, dur=12.0):
+    n = int(SR * dur)
+    nf = int(n / HOP) + 2
+    exc = np.zeros(n)
+    exc[:441] = kernels.pink_burst(441, 100, 1.0, 42)
+    y = kernels.ks_string(np.full(nf, f0), np.full(nf, ctrl_val),
+                          exc, SR, HOP, 8.0)
+    y = kernels.dc_blocker(y, SR)
+    w = int(0.05 * SR)
+    m = len(y) // w * w
+    env = np.sqrt((y[:m].reshape(-1, w) ** 2).mean(axis=1))
+    below = np.where(env < env.max() / 1000.0)[0]
+    return below[0] * 0.05 if len(below) else dur
+
+
+def test_string_decay_follows_its_control():
+    """The damping control sets decay time, and damping actually damps.
+
+    The worklet drove its loop filter coefficient to zero for a 'dampen',
+    which freezes the filter's state rather than damping the string.
+    """
+    free = _t60(146.8, 1.0)
+    normal = _t60(146.8, 0.5)
+    damped = _t60(146.8, 0.0)
+    assert free > normal > damped
+    assert 1.5 < normal < 5.0        # a plucked string, not a blip or a drone
+    assert damped < 0.5              # a dampen stops the note
+
+
+def test_long_plucked_render_stays_bounded():
+    """Repeated plucks must not accumulate: the loop filter has unity DC
+    gain, so a biased excitation grows without limit over a long render."""
+    n = int(SR * 30)
+    nf = int(n / HOP) + 2
+    f0 = np.full(nf, 220.0)
+    cutoff = np.full(nf, 0.5)
+    exc = np.zeros(n)
+    # a pluck every half second for 30 s
+    for k in range(60):
+        start = int(k * 0.5 * SR)
+        burst = kernels.pink_burst(441, 100, 1.0, 100 + k)
+        exc[start:start + 441] += burst
+    y = kernels.ks_string(f0, cutoff, exc, SR, HOP, 8.0)
+    assert np.all(np.isfinite(y))
+    first = np.abs(y[:int(SR * 5)]).max()
+    last = np.abs(y[-int(SR * 5):]).max()
+    # the end must not be wildly louder than the beginning
+    assert last < 5 * first
 
 
 @pytest.mark.parametrize("target", [220.0, 440.0, 880.0])

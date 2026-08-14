@@ -102,6 +102,19 @@ def _parse_utc(value) -> datetime:
 
 
 class Piece:
+    # Keys this model understands in a transcription document. Used both to
+    # validate hand-built Pieces and to drop server fields we do not model.
+    _ALLOWED_JSON_KEYS = {
+        'raga', 'instrumentation', 'phraseGrid', 'phrases', 'title',
+        'dateCreated', 'dateModified', 'location', '_id', 'audioID',
+        'audio_DB_ID', 'userID', 'name', 'family_name', 'given_name',
+        'permissions', 'soloist', 'soloInstrument', 'explicitPermissions',
+        'meters', 'sectionStartsGrid', 'sectionStarts', 'sectionCatGrid',
+        'sectionCategorization', 'adHocSectionCatGrid', 'excerptRange',
+        'assemblageDescriptors', 'collections', 'durTot', 'durArrayGrid',
+        'durArray', 'trackTitles'
+    }
+
     def __init__(self, options: Optional[dict] = None) -> None:
         opts = options or {}
         
@@ -269,15 +282,7 @@ class Piece:
             return
             
         # Define allowed parameter names
-        allowed_keys = {
-            'raga', 'instrumentation', 'phraseGrid', 'phrases', 'title', 'dateCreated',
-            'dateModified', 'location', '_id', 'audioID', 'audio_DB_ID', 'userID', 'name',
-            'family_name', 'given_name', 'permissions', 'soloist', 'soloInstrument',
-            'explicitPermissions', 'meters', 'sectionStartsGrid', 'sectionStarts',
-            'sectionCatGrid', 'sectionCategorization', 'adHocSectionCatGrid', 'excerptRange',
-            'assemblageDescriptors', 'collections', 'durTot', 'durArrayGrid', 'durArray',
-            'trackTitles'
-        }
+        allowed_keys = Piece._ALLOWED_JSON_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -1634,6 +1639,34 @@ class Piece:
             new_obj["dateCreated"] = _parse_utc(new_obj["dateCreated"])
         if "dateModified" in new_obj:
             new_obj["dateModified"] = _parse_utc(new_obj["dateModified"])
+
+        # Legacy documents carry nulls inside list fields that the model
+        # requires to be homogeneous (e.g. collections: [None, None, "id"]).
+        # Drop them rather than refusing to load a whole transcription.
+        for key in ('collections', 'sectionStarts'):
+            val = new_obj.get(key)
+            if isinstance(val, list) and any(v is None for v in val):
+                new_obj[key] = [v for v in val if v is not None]
+                warnings.warn(
+                    f"dropped {sum(1 for v in val if v is None)} null "
+                    f"entr(ies) from '{key}' while loading transcription "
+                    f"{new_obj.get('_id', '?')}", UserWarning, stacklevel=2)
+
+        # The server may carry metadata this model does not model yet
+        # (e.g. 'performers', 'transcriber'). Constructor validation exists
+        # to catch typos in hand-built Pieces; applying it to server data
+        # makes deserialization fail whenever the platform adds a field, so
+        # unknown keys are dropped here with a warning instead.
+        unknown = [k for k in new_obj
+                   if k not in Piece._ALLOWED_JSON_KEYS]
+        if unknown:
+            for key in unknown:
+                del new_obj[key]
+            warnings.warn(
+                f"ignoring unrecognized transcription field(s): "
+                f"{', '.join(sorted(unknown))}. The server sent data this "
+                f"version of idtap does not model; upgrading may add "
+                f"support.", UserWarning, stacklevel=2)
 
         piece = Piece(new_obj)
 

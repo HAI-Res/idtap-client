@@ -49,12 +49,32 @@ def _ctrl_hold(arr, i, hop):
     return arr[k]
 
 
+# Extended Karplus-Strong string constants. The round-trip gain stays below
+# unity at both extremes, so the loop is stable however it is driven: a
+# freely ringing string decays slowly, a damped one quickly, and neither
+# can accumulate.
+KS_T60_MAX = 7.0          # seconds to -60 dB with the string ringing freely
+KS_T60_MIN = 0.15         # seconds to -60 dB with the string fully damped
+# Stiffness allpass coefficient. Real strings are dispersive — high
+# partials travel faster — which stretches the harmonic series and gives a
+# plucked steel string its shimmer. 0 disables it.
+KS_STIFFNESS = 0.22
+# Loop lowpass coefficient at full ring; higher is darker.
+KS_BRIGHTNESS = 0.35
+
+
 @njit(cache=True)
 def pink_burst(n, attack_n, amp, seed):
     """Pink-noise burst (Paul Kellet filter), linear attack ramp.
 
     Port of sendBurst() in Synths.vue (amp is pre-doubled there; caller
     passes the final amplitude here).
+
+    The mean is removed before returning. Kellet's lowest band is very
+    nearly an integrator, so the raw burst carries a large DC offset — and
+    a plucked string cannot have net displacement anyway, so injecting one
+    is unphysical. It is also unbounded: the string loop's filter has unity
+    DC gain, so any offset integrates for the rest of the render.
     """
     np.random.seed(seed)
     out = np.empty(n, dtype=np.float64)
@@ -78,8 +98,12 @@ def pink_burst(n, attack_n, amp, seed):
     ramp_n = attack_n if attack_n < n else n
     for i in range(ramp_n):
         out[i] *= i / ramp_n
+    mean = 0.0
     for i in range(n):
-        out[i] *= amp
+        mean += out[i]
+    mean /= n
+    for i in range(n):
+        out[i] = (out[i] - mean) * amp
     return out
 
 
@@ -155,38 +179,82 @@ def tracking_lowpass(x, freq_ctrl, sr, hop):
 # ---------------------------------------------------------------------------
 
 @njit(cache=True)
-def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp):
-    """Karplus-Strong string, port of karplusStrong2.worklet.js.
+def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp,
+              stiffness=KS_STIFFNESS, brightness=KS_BRIGHTNESS):
+    """Extended Karplus-Strong plucked string (Jaffe & Smith 1983).
 
-    Loop: y = excitation + onepole(delayed, cutoff); delay length tracks
-    f0 with fractional-sample interpolation. AMP=8 matches the worklet.
+    The worklet's loop could not be made safe by tuning it: its loop filter
+    had a DC gain of exactly 1, so the delay loop was a perfect integrator
+    at DC and any bias grew without bound — a half-hour render reached
+    1e158 — while its "dampen" set the filter coefficient to zero, which
+    freezes the filter's state rather than damping the string, injecting a
+    constant. This is the standard extended form instead, which is stable
+    by construction rather than by clamping:
+
+    - the loop filter is a one-pole lowpass scaled by an explicit gain, so
+      the round-trip gain is below unity at every frequency, and decay time
+      rather than filter state is what damping controls;
+    - a first-order allpass adds stiffness, stretching the partials into
+      the inharmonic shimmer that a plucked steel string actually has;
+    - delay length is compensated for the phase delay of both filters, so
+      the string is in tune at every pitch and damping setting.
+
+    ``cutoff_ctrl`` keeps its old meaning as a control curve: 1 is a freely
+    ringing string and 0 a fully damped one.
     """
     n = excitation.shape[0]
     out = np.empty(n, dtype=np.float64)
     size = 8192
     buf = np.zeros(size, dtype=np.float64)
     wp = 0
-    y1 = 0.0
+    lp = 0.0            # loop lowpass state
+    ap_x1 = 0.0         # allpass input history
+    ap_y1 = 0.0         # allpass output history
+    two_pi = 2.0 * math.pi
     for i in range(n):
         f0 = _ctrl_interp(f0_ctrl, i, hop)
         if f0 < 20.0:
             f0 = 20.0
-        cutoff = _ctrl_hold(cutoff_ctrl, i, hop)
-        # compensate loop delay for the one-pole filter's phase delay so the
-        # string is in tune at all pitches
-        w = 2.0 * math.pi * f0 / sr
-        b = 1.0 - cutoff
-        if b > 0.0 and cutoff > 0.0:
-            theta = math.atan2(b * math.sin(w), 1.0 - b * math.cos(w))
-            pd = theta / w
-        else:
-            pd = 0.0
+        damp_ctrl = _ctrl_hold(cutoff_ctrl, i, hop)
+        if damp_ctrl < 0.0:
+            damp_ctrl = 0.0
+        elif damp_ctrl > 1.0:
+            damp_ctrl = 1.0
+
+        # Round-trip gain set from a target decay time rather than chosen as
+        # a bare coefficient: the signal passes the filter once per period,
+        # so g^(f0*T60) = 1e-3 gives the gain for a given T60. Always < 1,
+        # so the loop cannot run away, and a damped string decays instead of
+        # freezing. Higher notes decaying faster in real time falls out of
+        # this naturally, as on a real string.
+        t60 = KS_T60_MIN + (KS_T60_MAX - KS_T60_MIN) * damp_ctrl
+        g = 10.0 ** (-3.0 / (f0 * t60))
+        if g > 0.99999:
+            g = 0.99999
+        # brightness of the loop lowpass (0 = no filtering, -> 1 = dark)
+        b = brightness * (1.0 - 0.5 * damp_ctrl)
+        if b < 0.0:
+            b = 0.0
+        elif b > 0.9:
+            b = 0.9
+
+        w = two_pi * f0 / sr
+        # phase delay of the one-pole lowpass (1-b)/(1 - b z^-1)
+        pd = math.atan2(b * math.sin(w), 1.0 - b * math.cos(w)) / w
+        # phase delay of the stiffness allpass (a + z^-1)/(1 + a z^-1)
+        a = stiffness
+        if a != 0.0:
+            num = math.sin(w) * (1.0 - a * a)
+            den = 2.0 * a + (1.0 + a * a) * math.cos(w)
+            pd += math.atan2(num, den) / w
         d = sr / f0 - pd
+        # never let compensation eat more than most of the period
+        min_d = 2.0
+        if d < min_d:
+            d = min_d
         if d > size - 4:
             d = size - 4.0
-        if d < 2.0:
-            d = 2.0
-        # fractional read at (wp - d)
+
         rpos = wp - d
         if rpos < 0.0:
             rpos += size
@@ -196,8 +264,18 @@ def ks_string(f0_ctrl, cutoff_ctrl, excitation, sr, hop, amp):
         if r1 >= size:
             r1 -= size
         delayed = buf[r0] * (1.0 - frac) + buf[r1] * frac
-        y1 = cutoff * delayed + (1.0 - cutoff) * y1
-        x = excitation[i] + y1
+
+        # stiffness allpass: disperses partials, sharpening the attack into
+        # the metallic shimmer of a plucked steel string
+        if a != 0.0:
+            ap_y = a * delayed + ap_x1 - a * ap_y1
+            ap_x1 = delayed
+            ap_y1 = ap_y
+            delayed = ap_y
+
+        # loop lowpass with explicit gain: DC gain is g, hence stable
+        lp = (1.0 - b) * delayed + b * lp
+        x = excitation[i] + g * lp
         buf[wp] = x
         wp += 1
         if wp >= size:
