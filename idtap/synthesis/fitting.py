@@ -305,9 +305,11 @@ SITAR_PARAMS = [
     Param('jawari', 0.0, 0.5, 0.06, 'how far the bridge contact travels'),
     Param('jawari_threshold', 0.002, 0.08, 0.02,
           'displacement at which the string first touches the bridge'),
-    Param('t60_max', 4.0, 30.0, 24.0, 'ring time with the string undamped'),
-    Param('chikari_level', 0.1, 4.0, 0.5, 'chikari against the main string'),
-    Param('chikari_t60', 1.0, 24.0, 4.9, 'chikari ring time'),
+    Param('t60_max', 8.0, 30.0, 20.0,
+          'ring time with the string undamped; a sitar sustains, and letting this fall to a few seconds lets the fit substitute sympathetic ring for the played note'),
+    Param('chikari_level', 0.1, 1.0, 0.45,
+          'chikari against the main string; they punctuate rather than sing, so they stay below it'),
+    Param('chikari_t60', 1.0, 8.0, 4.9, 'chikari ring time'),
     # Body. Without these the model can only tilt its spectrum, not shape
     # it — which is what the first fit ran aground on, pinning five of
     # seven parameters at their bounds trying to match a tilt it could
@@ -320,9 +322,12 @@ SITAR_PARAMS = [
     Param('body_f5', 1000.0, 3000.0, 1400.0, 'soundboard resonance'),
     Param('body_f6', 2000.0, 4000.0, 2600.0, 'soundboard resonance'),
     # Sympathetic strings, tuned by the raga rather than fitted.
-    Param('taraf_mix', 0.0, 3.0, 0.35, 'sympathetic strings in the output'),
-    Param('taraf_drive', 0.0, 0.6, 0.05, 'how hard the bridge drives them'),
-    Param('taraf_t60', 0.5, 15.0, 3.0, 'how long they ring'),
+    Param('taraf_mix', 0.0, 1.2, 0.4, 'sympathetic strings in the output'),
+    Param('taraf_drive', 0.0, 0.25, 0.08,
+          'how hard the bridge drives them'),
+    Param('taraf_t60', 1.0, 6.0, 3.0, 'how long they ring'),
+    Param('taraf_damp', 0.15, 0.8, 0.45,
+          'how dark the sympathetics are; thin wire over a bridge loses its highs quickly'),
 ]
 
 SARANGI_PARAMS = [

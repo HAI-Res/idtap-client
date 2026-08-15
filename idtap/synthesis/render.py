@@ -232,7 +232,8 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
             symp = kernels.sympathetic_bank(
                 out, np.asarray(freqs, dtype=np.float64),
                 P.get('taraf_t60', kernels.SITAR_TARAF_T60),
-                P.get('taraf_drive', kernels.SITAR_TARAF_DRIVE), float(sr))
+                P.get('taraf_drive', kernels.SITAR_TARAF_DRIVE), float(sr),
+                P.get('taraf_damp', kernels.SITAR_TARAF_DAMP))
             out = out + taraf_mix * symp
 
     # the gourd and soundboard

@@ -384,6 +384,8 @@ SITAR_BODY_MIX = 0.25
 # on ringing — which is the halo around a sitar's sound.
 SITAR_TARAF_DRIVE = 0.05
 SITAR_TARAF_T60 = 3.0
+# How dark the sympathetics are. Higher loses the highs faster.
+SITAR_TARAF_DAMP = 0.45
 SITAR_TARAF_MIX = 0.35
 
 
@@ -429,7 +431,8 @@ def body_resonators(x, freqs, qs, mix, sr):
 
 
 @njit(cache=True)
-def sympathetic_bank(drive, freqs, t60, drive_gain, sr):
+def sympathetic_bank(drive, freqs, t60, drive_gain, sr,
+                     damp=SITAR_TARAF_DAMP):
     """Undamped strings excited only through the bridge.
 
     Each is a delay loop tuned to a scale degree, fed a little of the
@@ -466,7 +469,10 @@ def sympathetic_bank(drive, freqs, t60, drive_gain, sr):
             if r1 >= size:
                 r1 -= size
             delayed = bufs[j, r0] * (1.0 - frac) + bufs[j, r1] * frac
-            lps[j] = 0.85 * delayed + 0.15 * lps[j]
+            # sympathetic strings are thin wire over a bridge: they lose
+            # their high partials quickly, and without that they read as
+            # unnaturally bright and too easily excited
+            lps[j] = (1.0 - damp) * delayed + damp * lps[j]
             v = drive[i] * drive_gain + gs[j] * lps[j]
             bufs[j, wp] = v
             wps[j] = wp + 1
