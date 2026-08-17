@@ -1,0 +1,38 @@
+{
+  "source": {
+    "transcription": "68002a62e0cac794f4b4a29c",
+    "performer": "Vilayat Khan",
+    "seconds_fitted": 833.6,
+    "chikari_hz": [
+      284.0,
+      431.7,
+      568.0
+    ]
+  },
+  "fit": {
+    "method": "CMA-ES, popsize 56, 160 generations",
+    "loss_db": 4.007,
+    "loss_db_at_defaults": 11.735,
+    "bands_used": 34
+  },
+  "params": {
+    "body_f1": 60.0151,
+    "body_f2": 398.3834,
+    "body_f3": 329.9572,
+    "body_f4": 551.0427,
+    "body_f5": 1084.3136,
+    "body_f6": 2612.988,
+    "body_mix": 0.5375,
+    "brightness": 0.0055,
+    "chikari_level": 0.5978,
+    "chikari_t60": 1.0046,
+    "jawari": 0.4983,
+    "jawari_threshold": 0.0036,
+    "stiffness": 0.0567,
+    "t60_max": 10.6477,
+    "taraf_damp": 0.213,
+    "taraf_drive": 0.1998,
+    "taraf_mix": 1.1978,
+    "taraf_t60": 5.9238
+  }
+}

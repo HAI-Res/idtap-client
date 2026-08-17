@@ -307,7 +307,7 @@ SITAR_PARAMS = [
           'displacement at which the string first touches the bridge'),
     Param('t60_max', 8.0, 30.0, 20.0,
           'ring time with the string undamped; a sitar sustains, and letting this fall to a few seconds lets the fit substitute sympathetic ring for the played note'),
-    Param('chikari_level', 0.1, 1.0, 0.45,
+    Param('chikari_level', 0.05, 0.6, 0.3,
           'chikari against the main string; they punctuate rather than sing, so they stay below it'),
     Param('chikari_t60', 1.0, 8.0, 4.9, 'chikari ring time'),
     # Body. Without these the model can only tilt its spectrum, not shape
@@ -342,6 +342,23 @@ SARANGI_PARAMS = [
 
 def defaults(params: Sequence[Param]) -> Dict[str, float]:
     return {p.name: p.default for p in params}
+
+
+def load_preset(name: str) -> Dict[str, float]:
+    """Parameters from a fitted preset in ``synthesis/presets``.
+
+    See the README there before trusting one wholesale: the loss cannot
+    tell played-string energy from sympathetic energy, so a preset's
+    chikari and taraf levels are an upper bound rather than a finding.
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / 'presets' / f'{name}.json'
+    if not path.exists():
+        available = sorted(p.stem for p in path.parent.glob('*.json'))
+        raise ValueError(f'no preset {name!r}; have {available}')
+    return json.loads(path.read_text())['params']
 
 
 def to_vector(values: Dict[str, float],
