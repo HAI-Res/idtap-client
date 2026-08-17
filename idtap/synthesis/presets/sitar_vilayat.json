@@ -1,0 +1,39 @@
+{
+  "source": {
+    "transcription": "68002a62e0cac794f4b4a29c",
+    "performer": "Vilayat Khan",
+    "seconds_fitted": 833.6,
+    "chikari_hz": [
+      284.0,
+      431.7,
+      568.0
+    ]
+  },
+  "fit": {
+    "method": "CMA-ES, popsize 56, 160 generations",
+    "loss_db": 4.255,
+    "loss_db_at_defaults": 11.806,
+    "bands_used": 34,
+    "note": "these are the current kernel defaults; see README.md"
+  },
+  "params": {
+    "body_f1": 61.551765783016805,
+    "body_f2": 394.76819702770854,
+    "body_f3": 356.6305040103169,
+    "body_f4": 550.0312125345872,
+    "body_f5": 1133.764848607439,
+    "body_f6": 2634.183052925333,
+    "body_mix": 0.558298962867979,
+    "brightness": 0.005074842920410994,
+    "chikari_level": 0.5994835562559687,
+    "chikari_t60": 4.179003334763563,
+    "jawari": 0.4966044493908164,
+    "jawari_threshold": 0.0028586992022563043,
+    "stiffness": 0.4995871023130969,
+    "t60_max": 13.041045500862804,
+    "taraf_damp": 0.30564063553940163,
+    "taraf_drive": 0.2462432694179641,
+    "taraf_mix": 0.4733608726490302,
+    "taraf_t60": 3.9358131086947474
+  }
+}

@@ -102,6 +102,19 @@ def _parse_utc(value) -> datetime:
 
 
 class Piece:
+    # Keys this model understands in a transcription document. Used both to
+    # validate hand-built Pieces and to drop server fields we do not model.
+    _ALLOWED_JSON_KEYS = {
+        'raga', 'instrumentation', 'phraseGrid', 'phrases', 'title',
+        'dateCreated', 'dateModified', 'location', '_id', 'audioID',
+        'audio_DB_ID', 'userID', 'name', 'family_name', 'given_name',
+        'permissions', 'soloist', 'soloInstrument', 'explicitPermissions',
+        'meters', 'sectionStartsGrid', 'sectionStarts', 'sectionCatGrid',
+        'sectionCategorization', 'adHocSectionCatGrid', 'excerptRange',
+        'assemblageDescriptors', 'collections', 'durTot', 'durArrayGrid',
+        'durArray', 'trackTitles'
+    }
+
     def __init__(self, options: Optional[dict] = None) -> None:
         opts = options or {}
         
@@ -269,15 +282,7 @@ class Piece:
             return
             
         # Define allowed parameter names
-        allowed_keys = {
-            'raga', 'instrumentation', 'phraseGrid', 'phrases', 'title', 'dateCreated',
-            'dateModified', 'location', '_id', 'audioID', 'audio_DB_ID', 'userID', 'name',
-            'family_name', 'given_name', 'permissions', 'soloist', 'soloInstrument',
-            'explicitPermissions', 'meters', 'sectionStartsGrid', 'sectionStarts',
-            'sectionCatGrid', 'sectionCategorization', 'adHocSectionCatGrid', 'excerptRange',
-            'assemblageDescriptors', 'collections', 'durTot', 'durArrayGrid', 'durArray',
-            'trackTitles'
-        }
+        allowed_keys = Piece._ALLOWED_JSON_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -934,6 +939,44 @@ class Piece:
         for traj, start in zip(trajs, starts):
             chunks.extend(decompose_trajectory(traj, start))
         return chunks
+
+    # ------------------------------------------------------------------
+    def synthesize(self, out: Optional[str] = None,
+                   tracks: Optional[List[int]] = None,
+                   sr: int = 44100,
+                   control_rate: float = 200.0,
+                   uniform_vowel: bool = False,
+                   track_gains: Optional[List[float]] = None,
+                   consonants: bool = True,
+                   vowel_space=None):
+        """Render this transcription to audio using the offline synthesis
+        engines (Karplus-Strong sitar + chikari, filter-feedback sarangi,
+        Klatt voice).
+
+        Args:
+            out: optional path; if given, a 16-bit PCM WAV file is written.
+            tracks: instrument track indices to render (default: all).
+            sr: output sample rate in Hz.
+            control_rate: control-signal rate in Hz (default 200).
+            uniform_vowel: render all vocal trajectories with the vowel 'a'.
+            track_gains: optional per-track linear gains applied after
+                per-track normalization.
+            consonants: render consonant gestures (closures, bursts,
+                aspiration, nasal murmurs) from consonant annotations.
+            vowel_space: optional VowelSpace measured from the singer's own
+                recording (idtap.synthesis.formants), replacing the generic
+                vowel formant table.
+
+        Returns:
+            numpy array of mono float samples in [-1, 1].
+        """
+        from ..synthesis import synthesize_piece
+        return synthesize_piece(self, out=out, tracks=tracks, sr=sr,
+                                control_rate=control_rate,
+                                uniform_vowel=uniform_vowel,
+                                track_gains=track_gains,
+                                consonants=consonants,
+                                vowel_space=vowel_space)
 
     # ------------------------------------------------------------------
     def track_from_traj(self, traj: Trajectory) -> int:
@@ -1596,6 +1639,34 @@ class Piece:
             new_obj["dateCreated"] = _parse_utc(new_obj["dateCreated"])
         if "dateModified" in new_obj:
             new_obj["dateModified"] = _parse_utc(new_obj["dateModified"])
+
+        # Legacy documents carry nulls inside list fields that the model
+        # requires to be homogeneous (e.g. collections: [None, None, "id"]).
+        # Drop them rather than refusing to load a whole transcription.
+        for key in ('collections', 'sectionStarts'):
+            val = new_obj.get(key)
+            if isinstance(val, list) and any(v is None for v in val):
+                new_obj[key] = [v for v in val if v is not None]
+                warnings.warn(
+                    f"dropped {sum(1 for v in val if v is None)} null "
+                    f"entr(ies) from '{key}' while loading transcription "
+                    f"{new_obj.get('_id', '?')}", UserWarning, stacklevel=2)
+
+        # The server may carry metadata this model does not model yet
+        # (e.g. 'performers', 'transcriber'). Constructor validation exists
+        # to catch typos in hand-built Pieces; applying it to server data
+        # makes deserialization fail whenever the platform adds a field, so
+        # unknown keys are dropped here with a warning instead.
+        unknown = [k for k in new_obj
+                   if k not in Piece._ALLOWED_JSON_KEYS]
+        if unknown:
+            for key in unknown:
+                del new_obj[key]
+            warnings.warn(
+                f"ignoring unrecognized transcription field(s): "
+                f"{', '.join(sorted(unknown))}. The server sent data this "
+                f"version of idtap does not model; upgrading may add "
+                f"support.", UserWarning, stacklevel=2)
 
         piece = Piece(new_obj)
 
