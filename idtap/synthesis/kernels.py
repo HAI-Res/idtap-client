@@ -56,12 +56,12 @@ def _ctrl_hold(arr, i, hop):
 # Seconds to -60 dB. A sitar's main string rings for a long time — the note
 # has to carry across a whole meend — so the free end of this range is much
 # longer than a guitar's would be.
-KS_T60_MAX = 24.0         # ringing freely
+KS_T60_MAX = 13.041045500862804         # ringing freely
 KS_T60_MIN = 0.15         # fully damped, i.e. a hand on the string
 # Stiffness allpass coefficient. Real strings are dispersive — high
 # partials travel faster — which stretches the harmonic series and gives a
 # plucked steel string its shimmer. 0 disables it.
-KS_STIFFNESS = 0.22
+KS_STIFFNESS = 0.4995871023130969
 # Loop lowpass coefficient at full ring; higher is darker. This filter is
 # applied once per round trip — some 700 times during a 2.5 s note — so its
 # effect compounds enormously. At 0.35 it attenuated 2 kHz by 118 dB over a
@@ -69,7 +69,7 @@ KS_STIFFNESS = 0.22
 # short exactly where the real instrument peaks. Kept small so that high
 # partials decay faster than low ones, as on a real string, without being
 # erased.
-KS_BRIGHTNESS = 0.05
+KS_BRIGHTNESS = 0.005074842920410994
 
 
 @njit(cache=True)
@@ -210,8 +210,8 @@ def tracking_lowpass(x, freq_ctrl, sr, hop):
 # Raman (1921) identified the mechanism; Siddiq (2012) and van Walstijn
 # model it properly as distributed contact. This is the cheap form of the
 # same idea: modulate the delay length by the instantaneous displacement.
-JAWARI_DEPTH = 0.06         # how far the contact point travels; 0 disables
-JAWARI_THRESHOLD = 0.02     # displacement at which the string first touches
+JAWARI_DEPTH = 0.4966044493908164         # how far the contact point travels; 0 disables
+JAWARI_THRESHOLD = 0.0028586992022563043     # displacement at which the string first touches
 
 
 # ---------------------------------------------------------------------------
@@ -376,17 +376,28 @@ SARANGI_BODY_FREQS = np.array([185.0, 275.0, 405.0, 460.0, 530.0,
 # The gourd and soundboard radiate with their own resonances, which is what
 # shapes one part of the spectrum relative to another. Without them the
 # model can only tilt its output, not shape it.
-SITAR_BODY_FREQS = np.array([120.0, 220.0, 400.0, 750.0, 1400.0, 2600.0])
+#
+# These are the fitted values (see synthesis/presets/sitar_vilayat.json).
+# The two low body resonances came out close together near 60 and 360 Hz
+# rather than spread as guessed, which is most of why the fitted model has
+# a body where the hand-set one had a tilt.
+SITAR_BODY_FREQS = np.array([61.551765783016805, 394.76819702770854, 356.6305040103169, 550.0312125345872, 1133.764848607439, 2634.183052925333])
 SITAR_BODY_QS = np.array([6.0, 8.0, 6.0, 5.0, 4.0, 3.0])
-SITAR_BODY_MIX = 0.25
+SITAR_BODY_MIX = 0.558298962867979
 # Sympathetic strings, tuned to the raga's scale degrees. They are never
 # played, only excited by the main strings through the bridge, and they go
 # on ringing — which is the halo around a sitar's sound.
-SITAR_TARAF_DRIVE = 0.05
-SITAR_TARAF_T60 = 3.0
+#
+# Fitted, but with the caveat recorded in the presets README: the loss
+# cannot tell their energy from the played string's, so it spends them
+# freely and every fit has run them to whatever ceiling it was given.
+# These sit at that ceiling. They are the values most likely to want
+# lowering by ear.
+SITAR_TARAF_DRIVE = 0.2462432694179641
+SITAR_TARAF_T60 = 3.9358131086947474
 # How dark the sympathetics are. Higher loses the highs faster.
-SITAR_TARAF_DAMP = 0.45
-SITAR_TARAF_MIX = 0.35
+SITAR_TARAF_DAMP = 0.30564063553940163
+SITAR_TARAF_MIX = 0.4733608726490302
 
 
 @njit(cache=True)

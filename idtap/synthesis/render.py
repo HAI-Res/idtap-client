@@ -26,7 +26,14 @@ SITAR_DAMPEN = 0.5           # loop-filter cutoff (web control default)
 # Chikari ring shorter than the main string: they are thin high strings,
 # struck as punctuation. At the web app's value they rang for 16.8 s —
 # longer than the main string — so 419 strums smeared into a wash.
-CHIKARI_CUTOFF = 0.2
+#
+# Both fitted (see synthesis/presets/sitar_vilayat.json). They are named
+# constants rather than literals at the call site so that the defaults are
+# the fitted values: baking the rest of the fit into kernels.py while
+# leaving these behind left a plain render 0.2 dB worse than the one it
+# was supposed to reproduce.
+SITAR_CHIKARI_T60 = 4.179003334763563
+SITAR_CHIKARI_LEVEL = 0.5994835562559687
 # How far apart the rake reaches successive strings. A chikari strum is a
 # flick of the little finger, not a strummed chord — the strings sound
 # almost together. Varying it per strum is most of what stops hundreds of
@@ -199,18 +206,17 @@ def render_sitar(piece, inst_idx: int, sr: float = DEFAULT_SR,
             if not per_string[s_idx]:
                 continue
             f0_arr = np.full(ctrl.n_frames, freq, dtype=np.float64)
-            chik_t60 = P.get('chikari_t60')
-            cut_val = (CHIKARI_CUTOFF if chik_t60 is None
-                       else min(max((chik_t60 - kernels.KS_T60_MIN)
-                                    / (kernels.KS_T60_MAX
-                                       - kernels.KS_T60_MIN), 0.0), 1.0))
+            chik_t60 = P.get('chikari_t60', SITAR_CHIKARI_T60)
+            cut_val = min(max((chik_t60 - kernels.KS_T60_MIN)
+                              / (kernels.KS_T60_MAX
+                                 - kernels.KS_T60_MIN), 0.0), 1.0)
             cut_arr = np.full(ctrl.n_frames, cut_val, dtype=np.float64)
             s_exc = _build_excitation(
                 n, sr, per_string[s_idx],
                 seed_base=inst_idx * 1000 + 200 + s_idx)
             chik = kernels.ks_string(
                 f0_arr, cut_arr, s_exc, float(sr), hop,
-                KS_AMP * P.get('chikari_level', 0.5),
+                KS_AMP * P.get('chikari_level', SITAR_CHIKARI_LEVEL),
                 stiff, bright, jaw, jaw_thr)
             chik_sum += chik
         chik_sum = kernels.dc_blocker(chik_sum, float(sr))

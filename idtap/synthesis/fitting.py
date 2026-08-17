@@ -309,10 +309,8 @@ SITAR_PARAMS = [
           'ring time with the string undamped; a sitar sustains, and letting this fall to a few seconds lets the fit substitute sympathetic ring for the played note'),
     Param('chikari_level', 0.05, 0.6, 0.3,
           'chikari against the main string; they punctuate rather than sing, so they stay below it'),
-    Param('chikari_t60', 4.0, 24.0, 14.0,
-          'chikari ring time; measured at 12-18 s on the recording, and the '
-          'loss agrees once the sympathetics are capped — the old 8 s '
-          'ceiling was forcing a damped chikari propped up by taraf wash'),
+    Param('chikari_t60', 2.0, 12.0, 4.18,
+          'chikari ring time; both the fit and the ear land near 4-5 s'),
     # Body. Without these the model can only tilt its spectrum, not shape
     # it — which is what the first fit ran aground on, pinning five of
     # seven parameters at their bounds trying to match a tilt it could
@@ -333,15 +331,16 @@ SITAR_PARAMS = [
     # source, because the wash is already covering for it. That is how the
     # chikari ended up on its floor.
     #
-    # Capping them removes the substitute, and the loss immediately starts
-    # preferring a 14 s chikari, which is what the recording independently
-    # measures. So the ceiling is not a matter of taste holding back a
-    # better fit; it is what makes the rest of the fit mean anything.
-    Param('taraf_mix', 0.0, 0.5, 0.15, 'sympathetic strings in the output'),
-    Param('taraf_drive', 0.0, 0.25, 0.08,
+    # Capping them shrinks the trade without removing it: with these ranges
+    # the fit still puts taraf_t60 and taraf_drive on their ceilings and
+    # taraf_damp on its floor, i.e. as much sympathetic energy, as bright,
+    # as it is allowed. What the cap buys is that the chikari no longer
+    # has to be sacrificed to pay for it.
+    Param('taraf_mix', 0.0, 0.5, 0.473, 'sympathetic strings in the output'),
+    Param('taraf_drive', 0.0, 0.25, 0.246,
           'how hard the bridge drives them'),
-    Param('taraf_t60', 1.0, 4.0, 2.0, 'how long they ring'),
-    Param('taraf_damp', 0.3, 0.8, 0.65,
+    Param('taraf_t60', 1.0, 4.0, 3.94, 'how long they ring'),
+    Param('taraf_damp', 0.3, 0.8, 0.306,
           'how dark the sympathetics are; thin wire over a bridge loses its highs quickly'),
 ]
 
