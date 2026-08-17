@@ -309,7 +309,10 @@ SITAR_PARAMS = [
           'ring time with the string undamped; a sitar sustains, and letting this fall to a few seconds lets the fit substitute sympathetic ring for the played note'),
     Param('chikari_level', 0.05, 0.6, 0.3,
           'chikari against the main string; they punctuate rather than sing, so they stay below it'),
-    Param('chikari_t60', 1.0, 8.0, 4.9, 'chikari ring time'),
+    Param('chikari_t60', 4.0, 24.0, 14.0,
+          'chikari ring time; measured at 12-18 s on the recording, and the '
+          'loss agrees once the sympathetics are capped — the old 8 s '
+          'ceiling was forcing a damped chikari propped up by taraf wash'),
     # Body. Without these the model can only tilt its spectrum, not shape
     # it — which is what the first fit ran aground on, pinning five of
     # seven parameters at their bounds trying to match a tilt it could
@@ -322,11 +325,23 @@ SITAR_PARAMS = [
     Param('body_f5', 1000.0, 3000.0, 1400.0, 'soundboard resonance'),
     Param('body_f6', 2000.0, 4000.0, 2600.0, 'soundboard resonance'),
     # Sympathetic strings, tuned by the raga rather than fitted.
-    Param('taraf_mix', 0.0, 1.2, 0.4, 'sympathetic strings in the output'),
+    #
+    # These are capped hard, and the cap is load-bearing rather than
+    # cosmetic. Taraf wash is the cheapest way for the model to put energy
+    # anywhere in the spectrum, so given room it substitutes for whatever
+    # should have produced that energy — and the fit then damps the real
+    # source, because the wash is already covering for it. That is how the
+    # chikari ended up on its floor.
+    #
+    # Capping them removes the substitute, and the loss immediately starts
+    # preferring a 14 s chikari, which is what the recording independently
+    # measures. So the ceiling is not a matter of taste holding back a
+    # better fit; it is what makes the rest of the fit mean anything.
+    Param('taraf_mix', 0.0, 0.5, 0.15, 'sympathetic strings in the output'),
     Param('taraf_drive', 0.0, 0.25, 0.08,
           'how hard the bridge drives them'),
-    Param('taraf_t60', 1.0, 6.0, 3.0, 'how long they ring'),
-    Param('taraf_damp', 0.15, 0.8, 0.45,
+    Param('taraf_t60', 1.0, 4.0, 2.0, 'how long they ring'),
+    Param('taraf_damp', 0.3, 0.8, 0.65,
           'how dark the sympathetics are; thin wire over a bridge loses its highs quickly'),
 ]
 
@@ -358,7 +373,20 @@ def load_preset(name: str) -> Dict[str, float]:
     if not path.exists():
         available = sorted(p.stem for p in path.parent.glob('*.json'))
         raise ValueError(f'no preset {name!r}; have {available}')
-    return json.loads(path.read_text())['params']
+    params = json.loads(path.read_text())['params']
+
+    # A preset older than the bounds it was fitted under is worth saying
+    # out loud: those are exactly the values later work decided were wrong.
+    stale = [p.name for p in SITAR_PARAMS
+             if p.name in params and not p.low <= params[p.name] <= p.high]
+    if stale:
+        import warnings
+        warnings.warn(
+            f'preset {name!r} predates the current bounds for '
+            f'{", ".join(sorted(stale))}; these were fitted under ranges '
+            f'that let sympathetic wash stand in for the played string. '
+            f'See synthesis/presets/README.md.')
+    return params
 
 
 def to_vector(values: Dict[str, float],
