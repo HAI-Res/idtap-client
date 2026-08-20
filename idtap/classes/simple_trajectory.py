@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, Sequence, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:  # pragma: no cover
     from .trajectory import Trajectory
@@ -220,3 +220,73 @@ def decompose_trajectory(
             continuation=i > 0,
         ))
     return chunks
+
+
+def simple_trajectories_from_dots(
+    times: Sequence[float],
+    log_freqs: Sequence[Optional[float]],
+    types: Sequence[Union[str, int]],
+    slopes: Optional[Sequence[float]] = None,
+    *,
+    continuation: bool = False,
+) -> List[SimpleTrajectory]:
+    """Build chunks from a chained dot sequence, the inverse entry point.
+
+    `decompose_trajectory` turns one trajectory into chunks. This turns the
+    other common shape into chunks: parallel arrays, where consecutive chunks
+    *share* a dot, so n dots describe n-1 chunks. That is how the
+    representation is stored and how a model that predicts it emits it -- a
+    curve broken at breakpoints rather than a list of independent segments --
+    and building `SimpleTrajectory` objects by hand from that shape means
+    re-deriving the sharing convention at every call site.
+
+        times      (n,)    seconds, strictly increasing
+        log_freqs  (n,)    log2(Hz); None for a dot bounding silence
+        types      (n-1,)  'fixed' | 'cosine' | 'sloped-start' | 'sloped-end'
+                           | 'silent', or the matching TYPE_IDS integer
+        slopes     (n-1,)  only the sloped types read it; defaults to 2.0
+
+    `continuation` marks every chunk after the first as continuing the one
+    before, which is what `reconstruct_piece` groups on when it rebuilds
+    composite trajectories. Leave it False when the chunks are independent
+    observations, as they are coming from a model that has no source
+    trajectory to have been decomposed from.
+
+    Round-trips with `decompose_trajectory`: chunks in, arrays out, chunks
+    back.
+    """
+    n = len(times)
+    if n < 2:
+        raise ValueError(f"need at least two dots to make a chunk, got {n}")
+    if len(log_freqs) != n:
+        raise ValueError(
+            f"log_freqs has {len(log_freqs)} entries for {n} dots")
+    if len(types) != n - 1:
+        raise ValueError(
+            f"{n} dots describe {n - 1} chunks, but got {len(types)} types")
+    if slopes is not None and len(slopes) != n - 1:
+        raise ValueError(
+            f"{n - 1} chunks, but got {len(slopes)} slopes")
+
+    by_id = {v: k for k, v in TYPE_IDS.items()}
+    out: List[SimpleTrajectory] = []
+    for i in range(n - 1):
+        if times[i + 1] <= times[i]:
+            raise ValueError(
+                f"times must increase: dot {i} at {times[i]} is not before "
+                f"dot {i + 1} at {times[i + 1]}")
+        typ = types[i]
+        if not isinstance(typ, str):
+            if typ not in by_id:
+                raise ValueError(
+                    f"invalid simple trajectory type id: {typ!r}. "
+                    f"Allowed ids: {sorted(by_id)}")
+            typ = by_id[typ]
+        out.append(SimpleTrajectory(
+            type=typ,
+            start=OrientationDot(float(times[i]), log_freqs[i]),
+            end=OrientationDot(float(times[i + 1]), log_freqs[i + 1]),
+            slope=DEFAULT_SLOPE if slopes is None else float(slopes[i]),
+            continuation=continuation and i > 0,
+        ))
+    return out

@@ -217,4 +217,10 @@ class Automation:
         return Automation(obj)
 
     def to_json(self) -> Dict:
-        return {'values': self.values}
+        # normTime, not norm_time: every other class camelises on the way out,
+        # and the app reads normTime. Emitting snake_case leaves every entry's
+        # normTime undefined there, so no point satisfies `normTime <= x`, and
+        # the first call to valueAtX throws for x = 0 -- a transcription that
+        # loads, displays, and refuses to play.
+        return {'values': [{'normTime': v['norm_time'], 'value': v['value']}
+                           for v in self.values]}

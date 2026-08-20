@@ -23,6 +23,7 @@ from .classes.simple_trajectory import (
     OrientationDot,
     SimpleTrajectory,
     decompose_trajectory,
+    simple_trajectories_from_dots,
 )
 from .classes.trajectory import Trajectory
 
@@ -82,6 +83,7 @@ __all__ = [
     "reconstruct_piece",
     "OrientationDot",
     "decompose_trajectory",
+    "simple_trajectories_from_dots",
     "Trajectory",
     "Instrument",
     "login_google",

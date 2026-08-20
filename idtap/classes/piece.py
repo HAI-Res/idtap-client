@@ -1582,7 +1582,13 @@ class Piece:
             "sectionCatGrid": self.section_cat_grid,
             "explicitPermissions": self.explicit_permissions,
             "soloist": self.soloist,
-            "soloInstrument": self.solo_instrument,
+            # soloInstrument is typed as a string, but save_transcription
+            # defaults it to instrumentation[0], which is an Instrument. The
+            # enum then reaches json.dumps and the upload dies at the POST,
+            # after every local check has passed.
+            "soloInstrument": (self.solo_instrument.value
+                               if isinstance(self.solo_instrument, Instrument)
+                               else self.solo_instrument),
             "excerptRange": self.excerpt_range,
             "adHocSectionCatGrid": self.ad_hoc_section_cat_grid,
             "assemblageDescriptors": self.assemblage_descriptors,
