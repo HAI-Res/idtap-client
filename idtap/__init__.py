@@ -1,6 +1,6 @@
 """Python API package exposing IDTAP data classes and client."""
 
-__version__ = "0.1.52"
+__version__ = "0.1.53"
 
 from .client import SwaraClient
 from .auth import login_google
