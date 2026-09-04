@@ -36,20 +36,18 @@ jobs:
         with:
           python-version: '3.10'
           
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/Pipfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
-          
+          enable-cache: true
+          cache-dependency-glob: '**/pyproject.toml'
+
+      # Deliberately resolves from pyproject.toml, NOT uv.lock: this is a published
+      # library, so CI must test the same resolution PyPI users get.
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
-          pip install build twine toml
+          uv pip install --system -e .[dev]
+          uv pip install --system build twine toml
           
       - name: Validate version consistency
         run: |

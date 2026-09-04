@@ -6,9 +6,10 @@ The Python API (`idtap`) is a sophisticated client library for interacting with 
 ## Key Development Points
 
 ### Dependencies Management
-- **Keep `Pipfile` and `pyproject.toml` in sync** - this is critical!
-- Add new packages: `pipenv install package-name`
-- Then manually add to `pyproject.toml` dependencies array
+- **`pyproject.toml` is the single source of truth**; `uv.lock` pins the resolved versions.
+  There is no `Pipfile` or root `requirements.txt` any more - do not reintroduce them.
+- Add a package: edit the `dependencies` array in `pyproject.toml`, then run
+  `uv lock && uv sync --extra dev`
 - Core deps: requests, pyhumps, keyring, cryptography, PyJWT, pymongo, google-auth-oauthlib
 
 ### Testing
@@ -175,16 +176,15 @@ semantic-release version --print --no-commit --no-tag --no-push --no-vcs-release
 
 ## Installation Commands
 ```bash
-# Development
-pip install -e python/
-pipenv install --dev
+# Development (creates/refreshes .venv from uv.lock)
+uv sync --extra dev
 
-# Testing  
-pytest python/idtap/tests/
-python python/api_testing/api_test.py
+# Testing
+uv run pytest idtap/tests/
+uv run python api_testing/api_test.py
 
-# Package management
-pipenv install package-name  # then manually add to pyproject.toml
+# Package management: edit pyproject.toml, then
+uv lock && uv sync --extra dev
 ```
 
 This API provides a production-ready foundation for complex musical transcription analysis with modern security practices and comprehensive testing coverage.
@@ -215,7 +215,7 @@ git tag vX.X.X && git push origin vX.X.X
 
 ### Prerequisites
 - PyPI account with API token configured
-- `build` and `twine` packages installed (`pipenv install build twine`)
+- `build` and `twine` available (`uv tool install twine`, or `uv run --with build --with twine ...`)
 - All changes committed and pushed to GitHub
 
 ### Step-by-Step Publishing Process
@@ -240,11 +240,10 @@ version = "0.1.13"  # Must match __init__.py exactly
 
 #### 2. Update Dependencies (if needed)
 
-**A. Sync `Pipfile` and `pyproject.toml`:**
+**A. Update dependencies in `pyproject.toml`:**
 ```bash
-# If adding new packages:
-pipenv install new-package-name
-# Then manually add to pyproject.toml dependencies array
+# After editing the dependencies array in pyproject.toml:
+uv lock && uv sync --extra dev
 ```
 
 **B. Check dependency versions in `pyproject.toml`:**
@@ -265,7 +264,7 @@ pytest idtap/tests/  # Must pass all tests
 
 **B. Test Package Installation Locally:**
 ```bash
-pip install -e .  # Test editable install
+uv pip install -e .  # Test editable install
 python -c "import idtap; print(idtap.__version__)"  # Verify version
 ```
 
@@ -378,7 +377,7 @@ rm -rf dist/ build/ *.egg-info/
 
 #### Dependency Conflicts
 - **Error**: Dependencies not installing correctly
-- **Fix**: Ensure `Pipfile` and `pyproject.toml` dependencies are exactly synchronized
+- **Fix**: Re-resolve from the one source of truth: `uv lock --upgrade && uv sync --extra dev`
 
 #### Authentication Issues
 - **Error**: 403 Forbidden on upload
