@@ -3,7 +3,6 @@ include README.md
 include LICENSE
 include SECURITY.md
 include CLAUDE.md
-include requirements.txt
 recursive-include idtap *.py
 recursive-include idtap *.typed
 recursive-exclude * __pycache__
