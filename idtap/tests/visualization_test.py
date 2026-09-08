@@ -107,6 +107,33 @@ class TestPlotMelodicContour:
         assert fig is not None
         plt.close(fig)
 
+    def test_show_consonants_draws_diamonds(self):
+        traj = _fixed_traj('sa', dur=2.0)
+        traj.add_consonant('ka')
+        traj.add_consonant('ga', start=False)
+        trajs = [traj, _fixed_traj('pa', dur=1.0)]
+
+        fig, ax = plt.subplots()
+        plot_melodic_contour(trajs, ax=ax, show_consonants=True)
+        # One PathCollection per diamond: start + end of the first trajectory.
+        from matplotlib.collections import PathCollection
+        diamonds = [c for c in ax.collections if isinstance(c, PathCollection)]
+        assert len(diamonds) == 2
+        starts = diamonds[0].get_offsets()
+        ends = diamonds[1].get_offsets()
+        assert starts[0][0] == pytest.approx(0.0)
+        assert ends[0][0] == pytest.approx(2.0)
+        plt.close(fig)
+
+    def test_show_consonants_off_by_default(self):
+        traj = _fixed_traj('sa', dur=2.0)
+        traj.add_consonant('ka')
+        fig, ax = plt.subplots()
+        plot_melodic_contour([traj], ax=ax)
+        from matplotlib.collections import PathCollection
+        assert not [c for c in ax.collections if isinstance(c, PathCollection)]
+        plt.close(fig)
+
     def test_only_silence(self):
         trajs = [_silent_traj(5.0)]
         fig = plot_melodic_contour(trajs)
@@ -161,6 +188,43 @@ class TestPlotPitchPrevalence:
         piece = _mock_piece()
         with pytest.raises(ValueError, match='Unknown segmentation'):
             plot_pitch_prevalence(piece, segmentation='unknown')
+
+    def test_section_types_filter(self):
+        trajs = _sample_trajs()
+        phrase = MagicMock()
+        phrase.trajectory_grid = [trajs]
+
+        piece = MagicMock()
+        piece.dur_tot = 16.0
+        sections = []
+        for sec_type in ('Improvisation', 'Composition'):
+            sec = MagicMock()
+            sec.phrases = [phrase]
+            sec.categorization = {'Top Level': sec_type}
+            sections.append(sec)
+        piece.sections_grid = [sections]
+        piece.section_starts_grid = [[0, 1]]
+        piece.dur_starts.return_value = [0.0, 8.0]
+
+        fig = plot_pitch_prevalence(piece, segmentation='section',
+                                    section_types=['Improvisation'])
+        texts = [t.get_text() for t in fig.axes[0].texts]
+        assert 'Improvisation' in texts
+        assert 'Composition' not in texts
+        plt.close(fig)
+
+    def test_raga_only_pitch_labels(self):
+        from idtap.classes.raga import Raga
+        piece = _mock_piece()   # trajs span pitch numbers 0..7
+        piece.raga = Raga()     # all-raised rule set: 0, 2, 4, 6, 7 in range
+        piece.title = 'Test'
+        fig = plot_pitch_prevalence(piece, segmentation='duration')
+        texts = [t.get_text() for t in fig.axes[0].texts]
+        for raga_letter in ('S', 'R', 'G', 'M', 'P'):
+            assert raga_letter in texts
+        for non_raga_letter in ('r', 'g', 'm'):   # chromatic rows 1, 3, 5
+            assert non_raga_letter not in texts
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

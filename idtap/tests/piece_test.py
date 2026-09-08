@@ -877,6 +877,28 @@ def test_vocal_display_helpers():
     assert piece.pulse_from_id(pid) == meter.all_pulses[0]
 
 
+def test_all_display_consonant_symbols():
+    piece, _ = build_vocal_piece()
+    # build_vocal_piece: t1 (0.0-0.5s) has start consonant 'ka' and end
+    # consonant 'ga'; no other trajectory has consonants.
+    t1 = piece.phrase_grid[0][0].trajectories[0]
+    symbols = piece.all_display_consonant_symbols()
+    assert len(symbols) == 2
+
+    start, end = symbols
+    assert start['position'] == 'start'
+    assert start['time'] == pytest.approx(0.0)
+    assert start['logFreq'] == pytest.approx(t1.compute(0.0, log_scale=True))
+    assert start['uId'] == t1.unique_id
+    assert start['ipaText'] == t1.start_consonant_ipa
+
+    assert end['position'] == 'end'
+    assert end['time'] == pytest.approx(0.5)
+    assert end['logFreq'] == pytest.approx(t1.compute(1.0, log_scale=True))
+    assert end['uId'] == t1.unique_id
+    assert end['ipaText'] == t1.end_consonant_ipa
+
+
 def test_meters_and_instrumentation_update_duration_arrays():
     piece = build_simple_piece()
     original = json.dumps(piece.dur_array_grid)
