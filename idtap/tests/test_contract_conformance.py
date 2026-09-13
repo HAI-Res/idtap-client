@@ -23,6 +23,14 @@ from idtap.classes.phrase import Phrase
 from idtap.classes.piece import Piece
 
 
+# The contract's versionPolicy: each implementation pins the contract version it
+# was built against and asserts exact equality with contract.json in its
+# conformance suite. A minor bump means wire semantics changed (e.g. 0.2.0 =
+# PROP-6 vibrato v2) and this client needs the matching heal before it may load
+# newer data.
+CONTRACT_VERSION = "0.2.0"
+
+
 def _contract_dir():
     env = os.environ.get("IDTAP_CONTRACT_DIR")
     if env:
@@ -54,6 +62,14 @@ def test_contract_fixtures_available():
     if os.environ.get("REQUIRE_CONTRACT") != "1":
         pytest.skip("REQUIRE_CONTRACT not set — conformance fixtures are optional locally")
     assert PITCH_FIXTURES, f"no idtap-contract fixtures found under {_contract_dir()}"
+
+
+def test_contract_version_matches():
+    path = os.path.join(_contract_dir(), "contract.json")
+    if not os.path.exists(path):
+        pytest.skip("idtap-contract checkout not found")
+    assert _load(path)["version"] == CONTRACT_VERSION, (
+        "idtap-contract version changed; port the change and bump CONTRACT_VERSION")
 
 
 # --------------------------------------------------------------------------- pitch
@@ -159,6 +175,21 @@ def test_trajectory_conformance(path):
     if tj.get("automation"):
         assert t.automation is not None, "automation lost"
         assert len(t.automation.values) == len(tj["automation"]["values"])
+    # PROP-6 vibrato v2: healed/parsed vibObj, curve samples, canonical presence.
+    # expected.attach / expected.v1Equivalent are informational only.
+    if "vibObj" in exp:
+        got_vib = t.vib_obj_to_json()
+        assert set(got_vib) == set(exp["vibObj"]), f"{fx['name']}: vibObj keys"
+        for k, w in exp["vibObj"].items():
+            assert _rel(got_vib[k], w, rel), f"{fx['name']}: vibObj.{k} {got_vib[k]} != {w}"
+    if "curveX" in exp:
+        assert len(exp["curveX"]) == len(exp["curveFrequencies"])
+        for x, w in zip(exp["curveX"], exp["curveFrequencies"]):
+            g = t.compute(x)
+            assert _rel(g, w, rel), f"{fx['name']}: compute({x}) {g} != {w}"
+    if "vibObjInCanonical" in exp:
+        assert ("vibObj" in t.to_json()) == exp["vibObjInCanonical"], (
+            f"{fx['name']}: vibObj presence in canonical form (PROP-6b)")
 
 
 def test_trajectory_to_json_strips_fields():
