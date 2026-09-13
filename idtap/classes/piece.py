@@ -1657,6 +1657,18 @@ class Piece:
                     f"dropped {sum(1 for v in val if v is None)} null "
                     f"entr(ies) from '{key}' while loading transcription "
                     f"{new_obj.get('_id', '?')}", UserWarning, stacklevel=2)
+        ssg = new_obj.get('sectionStartsGrid')
+        if isinstance(ssg, list) and any(
+                isinstance(row, list) and any(v is None for v in row) for row in ssg):
+            n_null = sum(1 for row in ssg if isinstance(row, list)
+                         for v in row if v is None)
+            new_obj['sectionStartsGrid'] = [
+                [v for v in row if v is not None] if isinstance(row, list) else row
+                for row in ssg]
+            warnings.warn(
+                f"dropped {n_null} null entr(ies) from 'sectionStartsGrid' while "
+                f"loading transcription {new_obj.get('_id', '?')}",
+                UserWarning, stacklevel=2)
 
         # The server may carry metadata this model does not model yet
         # (e.g. 'performers', 'transcriber'). Constructor validation exists
