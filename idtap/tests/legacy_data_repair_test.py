@@ -5,6 +5,8 @@ in 'collections'/'sectionStarts' (left behind by deleted collections) and
 negative durations written by early editor bugs. from_json repairs these with
 a warning instead of rejecting the piece; direct construction stays strict.
 """
+import warnings
+
 import pytest
 
 from idtap.classes.piece import Piece
@@ -36,9 +38,15 @@ def test_piece_drops_null_section_starts():
 
 
 def test_piece_drops_null_section_starts_grid_entries():
-    obj = make_piece_json(sectionStartsGrid=[[0, None, 5.0]])
-    with pytest.warns(UserWarning, match='sectionStartsGrid'):
-        Piece.from_json(obj)
+    # section_starts_grid is derived from per-phrase is_section_start flags, so
+    # the piece needs real phrases for the repaired starts to be observable.
+    phrase = {'trajectories': [{'id': 0, 'durTot': 1.0, 'durArray': [1]}],
+              'durTot': 1.0, 'durArray': [1]}
+    obj = make_piece_json(phraseGrid=[[dict(phrase), dict(phrase), dict(phrase)]],
+                          sectionStartsGrid=[[0, None, 2]])
+    with pytest.warns(UserWarning, match=r"dropped 1 null .* 'sectionStartsGrid'"):
+        piece = Piece.from_json(obj)
+    assert piece.section_starts_grid == [[0, 2]]
 
 
 def test_piece_valid_collections_unchanged():
@@ -74,6 +82,19 @@ def test_phrase_repairs_negative_durations():
     with pytest.warns(UserWarning, match='durArray'):
         phrase = Phrase.from_json(obj)
     assert all(d >= 0 for d in phrase.dur_array)
+
+
+@pytest.mark.parametrize('dur_array', [[0.0, 0.0, 0.0], [-0.0, 0.0]])
+def test_trajectory_all_zero_dur_array_still_rejected(dur_array):
+    """Repair flips signs; it cannot invent durations. An all-zero durArray is a
+    genuinely degenerate record: no repair fires (-0.0 is not < 0, and abs() of
+    any real negative is > 0, so the `total > 0` guard is purely defensive) and
+    the constructor's all-zero check still raises."""
+    obj = {'id': 6, 'durTot': 0.5, 'durArray': dur_array}
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        with pytest.raises(ValueError, match='all zero'):
+            Trajectory.from_json(obj)
 
 
 def test_direct_construction_stays_strict():

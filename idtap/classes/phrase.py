@@ -564,12 +564,14 @@ class Phrase:
         # bugs; repair rather than reject (see Trajectory.from_json).
         dur_tot = opts.get('dur_tot')
         if isinstance(dur_tot, (int, float)) and dur_tot < 0:
-            warnings.warn(f"Phrase: repairing negative durTot {dur_tot} -> {-dur_tot}")
+            warnings.warn(f"Phrase: repairing negative durTot {dur_tot} -> {-dur_tot}",
+                          UserWarning, stacklevel=2)
             opts['dur_tot'] = -dur_tot
         dur_array = opts.get('dur_array')
         if isinstance(dur_array, list) and any(
                 isinstance(d, (int, float)) and d < 0 for d in dur_array):
-            warnings.warn("Phrase: repairing negative durArray values")
+            warnings.warn(f"Phrase: repairing negative durArray values {dur_array}",
+                          UserWarning, stacklevel=2)
             repaired = [abs(d) if isinstance(d, (int, float)) else d for d in dur_array]
             total = sum(d for d in repaired if isinstance(d, (int, float)))
             if total > 0:
