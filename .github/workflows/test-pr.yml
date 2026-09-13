@@ -1,8 +1,10 @@
 name: Test PR
 
 on:
+  # Every PR, whatever its base: stacked PRs (a branch opened against another
+  # feature branch) get checks too, so a reviewer can read CI results instead
+  # of tracing tests by hand.
   pull_request:
-    branches: [ main ]
 
 jobs:
   test:
@@ -17,10 +19,18 @@ jobs:
         with:
           fetch-depth: 0  # Needed for semantic-release
 
+      # Which idtap-contract ref to test against. Defaults to main; a client PR
+      # that ports a contract change still under review sets the file to that
+      # contract branch and resets it to main once both land.
+      - name: Resolve idtap-contract ref
+        id: contract-ref
+        run: echo "ref=$(tr -d '[:space:]' < .idtap-contract-ref)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout idtap-contract (golden fixtures)
         uses: actions/checkout@v4
         with:
           repository: HAI-Res/idtap-contract
+          ref: ${{ steps.contract-ref.outputs.ref }}
           path: idtap-contract
 
       - name: Set up Python
