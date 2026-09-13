@@ -16,10 +16,75 @@ from ..enums import Instrument
 
 
 class VibObjType(TypedDict, total=False):
-    periods: int
+    """Vibrato parameters, v2 (idtap-contract PROP-6).
+
+    rate          Hz, > 0, independent of ``dur_tot``
+    extent_start  log2 peak-to-peak excursion at x = 0, >= 0
+    extent_end    log2 peak-to-peak excursion at x = 1, >= 0; linear between
+    vert_offset   log2 centre offset from ``log_freqs[0]``
+    phase         radians at x = 0; v1 ``init_up`` becomes pi / 0
+    """
+    rate: float
+    extent_start: float
+    extent_end: float
+    vert_offset: float
+    phase: float
+
+
+class LegacyVibObjType(TypedDict, total=False):
+    """v1 vibrato parameters, accepted on input only and healed to v2."""
+    periods: float
     vert_offset: float
     init_up: bool
     extent: float
+
+
+VIB_V1_KEYS = frozenset({'periods', 'vert_offset', 'init_up', 'extent'})
+VIB_V2_KEYS = frozenset({'rate', 'extent_start', 'extent_end', 'vert_offset', 'phase'})
+
+
+def default_vib_obj() -> VibObjType:
+    """5.5 Hz, 60 cents peak-to-peak, centred, starting upward (phase pi)."""
+    return {
+        'rate': 5.5,
+        'extent_start': 0.05,
+        'extent_end': 0.05,
+        'vert_offset': 0.0,
+        'phase': math.pi,
+    }
+
+
+def _vib_number(key: str, value) -> float:
+    """Coerce a vibObj field to float. Stored data carries numbers as strings
+    (the old web sliders had no ``.number`` modifier), so numeric strings are
+    accepted; anything else is a TypeError."""
+    if isinstance(value, bool):
+        raise TypeError(f"vib_obj['{key}'] must be a number, got bool")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError as e:
+            raise TypeError(f"vib_obj['{key}'] must be a number or numeric string, got {value!r}") from e
+    raise TypeError(f"vib_obj['{key}'] must be a number, got {type(value).__name__}")
+
+
+def _vib_bool(key: str, value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value in (0, 1):
+            return bool(value)
+        raise TypeError(f"vib_obj['{key}'] must be boolean-like (0/1), got {value!r}")
+    if isinstance(value, str):
+        sval = value.strip().lower()
+        if sval in {'true', '1'}:
+            return True
+        if sval in {'false', '0'}:
+            return False
+        raise TypeError(f"vib_obj['{key}'] must be 'true'/'false' or '0'/'1', got {value!r}")
+    raise TypeError(f"vib_obj['{key}'] must be a boolean or boolean-like string, got {type(value).__name__}")
 
 
 class Trajectory:
@@ -72,15 +137,20 @@ class Trajectory:
 
         vib_obj = opts.get('vib_obj')
         if vib_obj is None:
-            self.vib_obj: VibObjType = {
-                'periods': 8,
-                'vert_offset': 0.0,  # float (matches VibObjType + _normalize_vib_obj default) so serialization is idempotent from cycle 1
-                'init_up': True,
-                'extent': 0.05,
-            }
+            self.vib_obj: VibObjType = default_vib_obj()
         else:
-            # Normalize and validate vib_obj for flexible inputs (e.g., strings)
-            self.vib_obj = self._normalize_vib_obj(vib_obj)  # type: ignore
+            try:
+                # Validate, coerce (strings -> numbers) and heal v1 -> v2.
+                self.vib_obj = self._normalize_vib_obj(vib_obj, self.dur_tot)
+            except (ValueError, TypeError):
+                if self.id == 13:
+                    raise
+                # PROP-6b: a vibObj on any other id carries no information (every
+                # pre-v2 writer stamped a default on every trajectory), so a
+                # malformed one must not make the document unloadable.
+                warnings.warn(
+                    f"Trajectory id {self.id}: ignoring malformed vibObj {vib_obj!r}")
+                self.vib_obj = default_vib_obj()
 
         instr = opts.get('instrumentation', Instrument.Sitar)
         self.instrumentation: Instrument = instr
@@ -327,7 +397,8 @@ class Trajectory:
         if 'vib_obj' in opts and opts['vib_obj'] is not None:
             if not isinstance(opts['vib_obj'], dict):
                 raise TypeError(f"Parameter 'vib_obj' must be a dict, got {type(opts['vib_obj']).__name__}")
-            self._validate_vib_obj_structure(opts['vib_obj'])
+            # Structure/value validation happens in _normalize_vib_obj, where a
+            # malformed object on a non-vibrato id can be tolerated (PROP-6b).
         
         if 'instrumentation' in opts and not isinstance(opts['instrumentation'], Instrument):
             raise TypeError(f"Parameter 'instrumentation' must be an Instrument enum, got {type(opts['instrumentation']).__name__}")
@@ -392,141 +463,78 @@ class Trajectory:
             warnings.warn(f"Vocal parameters provided but instrumentation is {instrumentation.name}. "
                          "Vocal parameters are typically used with Vocal_M or Vocal_F instruments.", UserWarning)
     
-    def _validate_vib_obj_structure(self, vib_obj: dict) -> None:
-        """Validate vib_obj has correct structure, allowing lenient input types.
+    @staticmethod
+    def _validate_vib_obj_structure(vib_obj: dict) -> None:
+        """Validate a vibObj (v2, or v1 detected by ``periods``) without mutating it.
 
-        Accepts numeric strings and floats that can be coerced to required types,
-        but does not mutate the provided dict. Actual coercion happens in
-        _normalize_vib_obj.
+        Types are lenient: numeric strings and 0/1 / 'true'/'false' are accepted
+        wherever stored data has been seen to carry them. Keys are strict: the
+        contract schema is ``additionalProperties: false``, so unknown keys are
+        rejected for both forms. Coercion itself happens in ``_normalize_vib_obj``.
         """
-        allowed_keys = {'periods', 'vert_offset', 'init_up', 'extent'}
-        provided_keys = set(vib_obj.keys())
-        invalid_keys = provided_keys - allowed_keys
-
+        is_v1 = 'periods' in vib_obj
+        allowed = VIB_V1_KEYS if is_v1 else VIB_V2_KEYS
+        invalid_keys = set(vib_obj.keys()) - allowed
         if invalid_keys:
             raise ValueError(
                 f"vib_obj contains invalid keys: {sorted(invalid_keys)}. "
-                f"Allowed keys: {sorted(allowed_keys)}"
+                f"Allowed keys ({'v1' if is_v1 else 'v2'}): {sorted(allowed)}"
             )
-
-        # Validate types and values (lenient)
-        if 'periods' in vib_obj:
-            p = vib_obj['periods']
-            if isinstance(p, int):
-                if p <= 0:
-                    raise ValueError("vib_obj['periods'] must be positive")
-            elif isinstance(p, float):
-                if p <= 0:
-                    raise ValueError("vib_obj['periods'] must be positive")
-            elif isinstance(p, str):
-                try:
-                    pf = float(p.strip())
-                except Exception as e:
-                    raise TypeError("vib_obj['periods'] must be an integer or numeric string") from e
-                if pf <= 0:
-                    raise ValueError("vib_obj['periods'] must be positive")
-            else:
-                raise TypeError("vib_obj['periods'] must be a number")
-
-        for key in ['vert_offset', 'extent']:
-            if key in vib_obj:
-                v = vib_obj[key]
-                if isinstance(v, (int, float)):
-                    pass
-                elif isinstance(v, str):
-                    try:
-                        float(v.strip())
-                    except Exception as e:
-                        raise TypeError(f"vib_obj['{key}'] must be a number or numeric string") from e
-                else:
-                    raise TypeError(f"vib_obj['{key}'] must be a number")
-
-        if 'extent' in vib_obj:
-            try:
-                ext_val = float(vib_obj['extent'])
-            except Exception:
-                # If not coercible, earlier checks will have raised
-                ext_val = 0.0
-            if ext_val <= 0:
-                raise ValueError("vib_obj['extent'] must be positive")
-
-        if 'init_up' in vib_obj:
-            iu = vib_obj['init_up']
-            if isinstance(iu, bool):
-                pass
-            elif isinstance(iu, (int, float)):
-                if iu not in (0, 1):
-                    raise TypeError("vib_obj['init_up'] must be boolean-like (0/1)")
-            elif isinstance(iu, str):
-                if iu.strip().lower() not in {'true', 'false', '0', '1'}:
-                    raise TypeError("vib_obj['init_up'] must be 'true'/'false' or '0'/'1'")
-            else:
-                raise TypeError("vib_obj['init_up'] must be a boolean or boolean-like string")
-
-    def _normalize_vib_obj(self, vib_obj: dict) -> VibObjType:
-        """Return a normalized VibObjType with correct Python types.
-
-        - periods: int (>0)
-        - vert_offset: float
-        - extent: float (>0)
-        - init_up: bool
-        """
-        # Start from defaults
-        norm: VibObjType = {
-            'periods': 8,
-            'vert_offset': 0.0,
-            'init_up': True,
-            'extent': 0.05,
-        }
-
-        # Validate structure leniently first
-        self._validate_vib_obj_structure(vib_obj)
-
-        # Coerce values
-        if 'periods' in vib_obj:
-            p = vib_obj['periods']
-            if isinstance(p, (int, float)):
-                norm['periods'] = int(p)
-            elif isinstance(p, str):
-                norm['periods'] = int(float(p.strip()))
-
+        if is_v1:
+            if _vib_number('periods', vib_obj['periods']) <= 0:
+                raise ValueError("vib_obj['periods'] must be positive")
+            if 'extent' in vib_obj and _vib_number('extent', vib_obj['extent']) < 0:
+                raise ValueError("vib_obj['extent'] must be non-negative")
+            if 'init_up' in vib_obj:
+                _vib_bool('init_up', vib_obj['init_up'])
+        else:
+            if 'rate' in vib_obj and _vib_number('rate', vib_obj['rate']) <= 0:
+                raise ValueError("vib_obj['rate'] must be positive")
+            for key in ('extent_start', 'extent_end'):
+                if key in vib_obj and _vib_number(key, vib_obj[key]) < 0:
+                    raise ValueError(f"vib_obj['{key}'] must be non-negative")
+            if 'phase' in vib_obj:
+                _vib_number('phase', vib_obj['phase'])
         if 'vert_offset' in vib_obj:
-            v = vib_obj['vert_offset']
-            if isinstance(v, (int, float)):
-                norm['vert_offset'] = float(v)
-            elif isinstance(v, str):
-                norm['vert_offset'] = float(v.strip())
+            _vib_number('vert_offset', vib_obj['vert_offset'])
 
-        if 'extent' in vib_obj:
-            e = vib_obj['extent']
-            if isinstance(e, (int, float)):
-                norm['extent'] = float(e)
-            elif isinstance(e, str):
-                norm['extent'] = float(e.strip())
+    @staticmethod
+    def heal_vib_obj(vib_obj: dict, dur_tot: float) -> VibObjType:
+        """Return a v2 ``VibObjType`` with Python floats, healing v1 losslessly.
 
-        if 'init_up' in vib_obj:
-            iu = vib_obj['init_up']
-            if isinstance(iu, bool):
-                norm['init_up'] = iu
-            elif isinstance(iu, (int, float)):
-                norm['init_up'] = bool(int(iu))
-            elif isinstance(iu, str):
-                sval = iu.strip().lower()
-                if sval in {'true', '1'}:
-                    norm['init_up'] = True
-                elif sval in {'false', '0'}:
-                    norm['init_up'] = False
-                else:
-                    # Should not happen due to validation above
-                    raise TypeError("vib_obj['init_up'] string must be 'true'/'false' or '0'/'1'")
+        PROP-6 heal, detected by the presence of ``periods``::
 
-        # Final sanity checks
-        if norm['periods'] <= 0:
-            raise ValueError("vib_obj['periods'] must be positive after normalization")
-        if norm['extent'] <= 0:
-            raise ValueError("vib_obj['extent'] must be positive after normalization")
+            rate        = periods / dur_tot      (stored periods as-is, not truncated)
+            extent_start = extent_end = extent
+            vert_offset = vert_offset
+            phase       = pi if init_up else 0
 
-        return norm
+        ``P = rate * dur_tot`` then equals the stored ``periods`` exactly, equal
+        extents and phase in {0, pi} make the v2 curve term-for-term the v1
+        curve, and every field is coerced with ``float()`` so v2 never carries a
+        string. Missing keys take the pre-v2 defaults (8 periods, 0.05, up).
+        """
+        if 'periods' in vib_obj:
+            extent = _vib_number('extent', vib_obj.get('extent', 0.05))
+            init_up = _vib_bool('init_up', vib_obj.get('init_up', True))
+            return {
+                'rate': _vib_number('periods', vib_obj['periods']) / dur_tot,
+                'extent_start': extent,
+                'extent_end': extent,
+                'vert_offset': _vib_number('vert_offset', vib_obj.get('vert_offset', 0.0)),
+                'phase': math.pi if init_up else 0.0,
+            }
+        out = default_vib_obj()
+        for key in VIB_V2_KEYS:
+            if key in vib_obj:
+                out[key] = _vib_number(key, vib_obj[key])  # type: ignore[literal-required]
+        return out
+
+    def _normalize_vib_obj(self, vib_obj: dict, dur_tot: Optional[float] = None) -> VibObjType:
+        """Validate then coerce/heal; see ``_validate_vib_obj_structure`` and
+        ``heal_vib_obj``."""
+        self._validate_vib_obj_structure(vib_obj)
+        return self.heal_vib_obj(vib_obj, self.dur_tot if dur_tot is None else dur_tot)
 
     # ------------------------------- properties -----------------------------
     @property
@@ -708,30 +716,88 @@ class Trajectory:
     def id12(self, x: float) -> float:
         return float(self.fund_id12)
 
-    def id13(self, x: float) -> float:
-        periods = self.vib_obj['periods']
-        vert_offset = self.vib_obj['vert_offset']
-        init_up = self.vib_obj['init_up']
-        extent = self.vib_obj['extent']
-        if abs(vert_offset) > extent / 2:
-            vert_offset = math.copysign(extent/2, vert_offset)
-        out = math.cos(x * 2 * math.pi * periods + int(init_up) * math.pi)
-        if x < 1/(2*periods):
-            start = self.log_freqs[0]
-            end = math.log2(self.id13(1/(2*periods)))
-            middle = (end + start)/2
-            ext = abs(end - start)/2
-            out = out*ext + middle
-            return 2 ** out
-        elif x > 1 - 1/(2*periods):
-            start = math.log2(self.id13(1 - 1/(2*periods)))
-            end = self.log_freqs[0]
-            middle = (end + start)/2
-            ext = abs(end - start)/2
-            out = out*ext + middle
-            return 2 ** out
+    def _vib_curve(self):
+        """The v2 vibrato curve's pieces (idtap-contract PROP-6).
+
+        Returns ``(core, x1, x2)``: ``core(x)`` is the log2 oscillation, ``x1``
+        the first extreme at least a quarter period in, ``x2`` the last extreme
+        at least a quarter period before the end (``x2 == x1`` when the
+        trajectory is too short to hold both). Shared by ``id13`` and
+        ``vib_breakpoints``.
+        """
+        v = self.vib_obj
+        rate = v['rate']
+        extent_start = v['extent_start']
+        extent_end = v['extent_end']
+        vert_offset = v['vert_offset']
+        phase = v['phase']
+        lf0 = self.log_freqs[0]
+        P = rate * self.dur_tot  # cycles over the trajectory, not necessarily integer
+        if not P >= 1:           # fewer than one cycle: compute with P = 1 (not stored)
+            P = 1.0
+
+        def core(xx: float) -> float:
+            A = (extent_start + (extent_end - extent_start) * xx) / 2
+            vo = vert_offset
+            if abs(vo) > A:
+                vo = math.copysign(A, vo)
+            return lf0 + vo + A * math.cos(2 * math.pi * P * xx + phase)
+
+        # extremes of cos(2 pi P x + phase) sit at x = (k - phase/pi) / (2P), k integer
+        ph = phase / math.pi
+        k1 = math.ceil(0.5 + ph)
+        k2 = math.floor(2 * P - 0.5 + ph)
+        x1 = (k1 - ph) / (2 * P)
+        x2 = (k2 - ph) / (2 * P)
+        if x2 < x1:
+            x2 = x1
+        return core, x1, x2
+
+    def vib_breakpoints(self) -> List[float]:
+        """Normalised times ``[0, x1, ..., x2, 1]`` at which the v2 vibrato curve
+        is at an extreme (plus the two ends). Between consecutive entries the
+        curve is a half cosine when the extent is constant; the first and last
+        intervals are the raised-cosine tapers."""
+        core, x1, x2 = self._vib_curve()
+        v = self.vib_obj
+        P = v['rate'] * self.dur_tot
+        if not P >= 1:
+            P = 1.0
+        ph = v['phase'] / math.pi
+        k1 = math.ceil(0.5 + ph)
+        k2 = math.floor(2 * P - 0.5 + ph)
+        xs = [0.0]
+        if k2 < k1:
+            xs.append(x1)
         else:
-            return 2 ** (out * extent/2 + vert_offset + self.log_freqs[0])
+            xs.extend((k - ph) / (2 * P) for k in range(k1, k2 + 1))
+        xs.append(1.0)
+        return xs
+
+    def id13(self, x: float) -> float:
+        """Vibrato v2 (idtap-contract PROP-6). Mirrors the TypeScript reference
+        ``trajectory.ts id13()``.
+
+            P     = rate * dur_tot                     cycles over the trajectory (>= 1)
+            A(x)  = (extent_start + (extent_end - extent_start) * x) / 2
+            core  = log_freqs[0] + clamp(vert_offset, +-A(x)) + A(x) * cos(2 pi P x + phase)
+
+        The curve always attaches at an extreme so the note starts and ends on
+        its notated pitch: a raised cosine carries ``log_freqs[0]`` out to
+        ``core(x1)`` and ``core(x2)`` back home. Both joins are at zero slope,
+        so the attach is smooth for every phase.
+        """
+        core, x1, x2 = self._vib_curve()
+        lf0 = self.log_freqs[0]
+        if x <= x1:
+            end = core(x1)
+            y = lf0 + (end - lf0) * (1 - math.cos(math.pi * x / x1)) / 2
+        elif x >= x2:
+            start = core(x2)
+            y = start + (lf0 - start) * (1 - math.cos(math.pi * (x - x2) / (1 - x2))) / 2
+        else:
+            y = core(x)
+        return 2 ** y
 
     # ---------------- consonant/vowel helpers -----------------------
     def remove_consonant(self, start: bool = True) -> None:
@@ -927,7 +993,9 @@ class Trajectory:
             'num': self.num,
             # name: stripped — derived from id on load (idtap-contract TRAJ-1)
             'fundID12': self.fund_id12,
-            'vibObj': self.vib_obj,
+            # PROP-6b: vibObj is only meaningful on id 13; loaders accept and
+            # ignore it on any other id.
+            'vibObj': self.vib_obj_to_json() if self.id == 13 else None,
             # instrumentation: stripped — inherited from the piece (TRAJ-1)
             'vowel': self.vowel,
             'startConsonant': self.start_consonant,
@@ -945,6 +1013,17 @@ class Trajectory:
         }
         # drop None values so they serialize as undefined (omitted) rather than null
         return {k: v for k, v in data.items() if v is not None}
+
+    def vib_obj_to_json(self) -> Dict[str, float]:
+        """The v2 vibObj in wire form (camelCase keys, plain floats)."""
+        v = self.vib_obj
+        return {
+            'rate': v['rate'],
+            'extentStart': v['extent_start'],
+            'extentEnd': v['extent_end'],
+            'vertOffset': v['vert_offset'],
+            'phase': v['phase'],
+        }
 
     @staticmethod
     def from_json(obj: Dict, ratios=None, fundamental=None) -> 'Trajectory':

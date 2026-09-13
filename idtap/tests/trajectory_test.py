@@ -36,7 +36,9 @@ def test_default_trajectory():
     assert t.name == 'Fixed'
     assert t.fund_id12 is None
 
-    def_vib = {'periods': 8, 'vert_offset': 0, 'init_up': True, 'extent': 0.05}
+    # v2 default (idtap-contract PROP-6): 5.5 Hz, 60 c, centred, starts upward
+    def_vib = {'rate': 5.5, 'extent_start': 0.05, 'extent_end': 0.05,
+               'vert_offset': 0.0, 'phase': math.pi}
     assert t.vib_obj == def_vib
     assert t.instrumentation == Instrument.Sitar
 
@@ -77,6 +79,8 @@ def test_compute_id7_id13():
         assert val == pytest.approx(expected)
     t12 = Trajectory({'id':12,'fund_id12':220})
     assert t12.id12(0.5) == pytest.approx(220)
+    # v1 input is healed to v2 on load (PROP-6); the reference below is the v1
+    # curve, which v2 reproduces exactly for phase in {0, pi} and integer P.
     vib = {'periods':2,'vert_offset':0,'init_up':True,'extent':0.1}
     t13 = Trajectory({'id':13,'vib_obj':vib})
 
