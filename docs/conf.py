@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'IDTAP API'
 copyright = '2025, Jon Myers'
 author = 'Jon Myers'
-release = '0.1.55'
-version = '0.1.55'
+release = '0.1.56'
+version = '0.1.56'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
