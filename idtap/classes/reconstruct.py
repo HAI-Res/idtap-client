@@ -22,8 +22,16 @@ Design constraints (see project notes):
       [sloped-end]             -> 3
       [sloped-start, cosine]   -> 4 (ladle)
       [cosine, sloped-end]     -> 5 (reverse ladle)
-      [cosine, ... , cosine]   -> 6 (yoyo; vibrato-shaped runs also land here)
+      [cosine, ... , cosine]   -> 6 (yoyo; a cosine chain from
+                                     ``vibrato_as_cosines`` also lands here)
       [silent]                 -> 12
+      [vibrato]                -> 13 (the chunk's rate / extent_start /
+                                     extent_end / phase / vert_offset become
+                                     the v2 ``vib_obj`` verbatim)
+
+  A ``vibrato`` chunk is always its own trajectory: a continuation group that
+  contains one is split into primitives rather than matched against the
+  composites, so a vibrato is never absorbed into a yoyo.
 
 - Generated output should always reconstruct to *something* viewable: a group
   whose type sequence matches no composite is split into one primitive
@@ -68,6 +76,7 @@ _PRIMITIVE_IDS = {
     'sloped-start': 2,
     'sloped-end': 3,
     'silent': 12,
+    'vibrato': 13,
 }
 
 
@@ -95,17 +104,27 @@ def _primitive_traj(chunk: SimpleTrajectory, raga: Raga, inst: Instrument) -> Tr
     if chunk.type == 'silent':
         return _silent_traj(chunk.dur_tot, raga, inst)
     start = raga.pitch_from_log_freq(chunk.start.log_freq)
-    if chunk.type == 'fixed':
+    if chunk.type in ('fixed', 'vibrato'):
         pitches = [start]
     else:
         pitches = [start, raga.pitch_from_log_freq(chunk.end.log_freq)]
-    return Trajectory({
+    options = {
         'id': _PRIMITIVE_IDS[chunk.type],
         'pitches': pitches,
         'dur_tot': chunk.dur_tot,
         'slope': chunk.slope,
         'instrumentation': inst,
-    })
+    }
+    if chunk.type == 'vibrato':
+        # a rename, not a fit: the chunk's numbers are the v2 vib_obj
+        options['vib_obj'] = {
+            'rate': chunk.rate,
+            'extent_start': chunk.extent_start,
+            'extent_end': chunk.extent_end,
+            'vert_offset': chunk.vert_offset,
+            'phase': chunk.phase,
+        }
+    return Trajectory(options)
 
 
 def _trajs_from_group(
@@ -125,6 +144,9 @@ def _trajs_from_group(
 
     types = [c.type for c in group]
 
+    if 'vibrato' in types:
+        # a vibrato is never swallowed by a composite; it stays its own id 13
+        return [_primitive_traj(c, raga, inst) for c in group]
     if types == ['sloped-start', 'cosine']:
         traj_id, slope = 4, group[0].slope
     elif types == ['cosine', 'sloped-end']:

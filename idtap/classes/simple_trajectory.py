@@ -1,13 +1,20 @@
 """Simplified trajectory representation for AI training pipelines.
 
 Every IDTAP trajectory can be expressed as a sequence of "simple" trajectories
-drawn from five primitive types:
+drawn from six primitive types:
 
 - ``silent``       (source id 12)
 - ``fixed``        (source id 0) — constant log-frequency
 - ``cosine``       (source id 1) — cosine interpolation between two log-freqs
 - ``sloped-start`` (source id 2) — steep start, easing into the end pitch
 - ``sloped-end``   (source id 3) — easing out of the start pitch, steep end
+- ``vibrato``      (source id 13) — the PROP-6 vibrato curve around a notated
+  log-frequency, carried by five extra numbers (``rate`` in Hz,
+  ``extent_start`` / ``extent_end`` in log2 peak to peak, ``phase`` in
+  radians, ``vert_offset`` in log2, default 0); both dots hold the notated
+  pitch, as a ``fixed`` does — the pitch the note attacks from and releases
+  to, which is the oscillation's centre unless ``vert_offset`` leans it to one
+  side
 
 Composite trajectory types are broken into runs of these primitives:
 
@@ -15,8 +22,19 @@ Composite trajectory types are broken into runs of these primitives:
 - id 5 (reverse ladle) -> cosine + sloped-end
 - id 6 (yoyo)          -> one cosine per dur_array segment
 - ids 7-11 (krintin family, slide) -> one fixed chunk per plateau
-- id 13 (vibrato)      -> one cosine per half period, between the actual
-  extreme values of the vibrato curve
+
+An id 13 vibrato maps one-to-one onto a single ``vibrato`` chunk (the
+``vib_obj`` is renamed, not fitted; all five numbers). The older lossy view —
+one cosine per half period between consecutive extremes of the curve — is
+still available via ``decompose_trajectory(..., vibrato_as_cosines=True)``;
+it is what earlier corpora were measured with, and it remains the producer's
+fallback for a run that does not fit a vibrato.
+
+The simplified format is discrete, so ``vibrato`` is a type here rather than
+a modifier on ``fixed`` as it is in a differentiable model's vocabulary (Jon,
+2026-09-14): the mapping to id 13 is one-to-one in both directions, and the
+floor between "a fixed" and "a small vibrato" lives in exactly one place, the
+producer's decoder, rather than in every consumer.
 
 Each simple trajectory is defined by two orientation dots (time in seconds,
 log2(frequency)), a slope (only meaningful for sloped-start / sloped-end;
@@ -30,13 +48,14 @@ continuation chunk's start pitch may still differ from the previous chunk's
 end pitch — continuation describes gesture membership, not pitch continuity.
 
 For ``silent`` chunks only the orientation-dot times are meaningful; their
-``log_freq`` values are ``None``.
+``log_freq`` values are ``None``. The vibrato numbers ride only on
+``vibrato`` chunks; on every other type they are ``None`` and never serialized.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, TYPE_CHECKING, Union
+from typing import Dict, List, Mapping, Optional, Sequence, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:  # pragma: no cover
     from .trajectory import Trajectory
@@ -44,14 +63,85 @@ if TYPE_CHECKING:  # pragma: no cover
 DEFAULT_SLOPE = 2.0
 
 # Integer codes for categorical encoding in training data. 0-3 match the
-# source trajectory ids for the non-composite types; silent gets 4.
+# source trajectory ids for the non-composite types; silent gets 4 and vibrato
+# 5. Existing codes are never renumbered: stored data depends on them.
 TYPE_IDS: Dict[str, int] = {
     'fixed': 0,
     'cosine': 1,
     'sloped-start': 2,
     'sloped-end': 3,
     'silent': 4,
+    'vibrato': 5,
 }
+
+# The vibrato numbers, in the order a sequence is read by
+# ``simple_trajectories_from_dots``: the first four match the consuming
+# model's VIB_* column order, and ``vert_offset`` is appended so a 4-sequence
+# (offset 0) still reads. Also the JSON keys they serialize to.
+VIBRATO_FIELDS = ('rate', 'extent_start', 'extent_end', 'phase', 'vert_offset')
+_VIBRATO_JSON_KEYS = {
+    'rate': 'rate',
+    'extent_start': 'extentStart',
+    'extent_end': 'extentEnd',
+    'phase': 'phase',
+    'vert_offset': 'vertOffset',
+}
+
+
+def vibrato_log_freq(
+    x: float,
+    dur_tot: float,
+    lf0: float,
+    rate: float,
+    extent_start: float,
+    extent_end: float,
+    phase: float,
+    vert_offset: float = 0.0,
+) -> float:
+    """log2-frequency of the PROP-6 vibrato curve at normalised position ``x``.
+
+    Term for term ``Trajectory.id13`` / ``Trajectory._vib_curve`` (which mirror
+    the TypeScript reference), with ``dur_tot`` standing in for the
+    trajectory's duration and ``lf0`` for ``log_freqs[0]``:
+
+        P       = rate * dur_tot, or 1 if that is under one cycle
+        A(x)    = (extent_start + (extent_end - extent_start) * x) / 2
+        core(x) = lf0 + clamp(vert_offset, +-A(x)) + A(x) * cos(2 pi P x + phase)
+
+    The curve attaches at an extreme so the note starts and ends on ``lf0``:
+    ``x1`` is the first extreme at least a quarter period in, ``x2`` the last
+    at least a quarter period before the end (``x2 = x1`` when the span is too
+    short to hold both), and raised cosines carry ``lf0`` out to ``core(x1)``
+    and ``core(x2)`` back home. Kept as a free function so the simplified
+    format has no dependency on ``Trajectory``; ``simple_trajectory_test``
+    pins it to ``Trajectory.id13`` at 1e-12 relative.
+    """
+    P = rate * dur_tot
+    if not P >= 1:
+        P = 1.0
+
+    def core(xx: float) -> float:
+        A = (extent_start + (extent_end - extent_start) * xx) / 2
+        vo = vert_offset
+        if abs(vo) > A:
+            vo = math.copysign(A, vo)
+        return lf0 + vo + A * math.cos(2 * math.pi * P * xx + phase)
+
+    ph = phase / math.pi
+    k1 = math.ceil(0.5 + ph)
+    k2 = math.floor(2 * P - 0.5 + ph)
+    x1 = (k1 - ph) / (2 * P)
+    x2 = (k2 - ph) / (2 * P)
+    if x2 < x1:
+        x2 = x1
+
+    if x <= x1:
+        end = core(x1)
+        return lf0 + (end - lf0) * (1 - math.cos(math.pi * x / x1)) / 2
+    if x >= x2:
+        start = core(x2)
+        return start + (lf0 - start) * (1 - math.cos(math.pi * (x - x2) / (1 - x2))) / 2
+    return core(x)
 
 
 @dataclass
@@ -77,6 +167,14 @@ class SimpleTrajectory:
     end: OrientationDot
     slope: float = DEFAULT_SLOPE
     continuation: bool = False
+    # vibrato only (the PROP-6 vib_obj numbers, the dot standing for
+    # log_freqs[0]): None on every other type.
+    rate: Optional[float] = None            # Hz, > 0
+    extent_start: Optional[float] = None    # log2, peak to peak, >= 0
+    extent_end: Optional[float] = None      # log2, peak to peak, >= 0
+    phase: Optional[float] = None           # radians at the chunk's start
+    vert_offset: Optional[float] = None     # log2 lean of the centre off the
+                                            # dot, clamped to +-A(x); default 0
 
     def __post_init__(self) -> None:
         if self.type not in TYPE_IDS:
@@ -84,6 +182,45 @@ class SimpleTrajectory:
                 f"invalid simple trajectory type: {self.type!r}. "
                 f"Allowed types: {sorted(TYPE_IDS)}"
             )
+        if self.type == 'vibrato':
+            self._validate_vibrato()
+        else:
+            stray = [f for f in VIBRATO_FIELDS if getattr(self, f) is not None]
+            if stray:
+                raise ValueError(
+                    f"{stray} are vibrato-only fields but the chunk type is "
+                    f"{self.type!r}; the vibrato numbers ride only on "
+                    f"'vibrato' chunks"
+                )
+
+    def _validate_vibrato(self) -> None:
+        """``rate`` and ``extent_start`` are required; ``extent_end`` defaults
+        to ``extent_start`` (constant extent), ``phase`` and ``vert_offset``
+        to 0."""
+        if self.rate is None:
+            raise ValueError("a vibrato chunk requires rate (Hz)")
+        if self.extent_start is None:
+            raise ValueError(
+                "a vibrato chunk requires extent_start (log2, peak to peak)")
+        if self.extent_end is None:
+            self.extent_end = self.extent_start
+        if self.phase is None:
+            self.phase = 0.0
+        if self.vert_offset is None:
+            self.vert_offset = 0.0
+        for f in VIBRATO_FIELDS:
+            v = getattr(self, f)
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise TypeError(f"vibrato {f} must be a number, got {v!r}")
+            if not math.isfinite(v):
+                raise ValueError(f"vibrato {f} must be finite, got {v!r}")
+            setattr(self, f, float(v))
+        if self.rate <= 0:
+            raise ValueError(f"vibrato rate must be > 0 Hz, got {self.rate}")
+        for f in ('extent_start', 'extent_end'):
+            if getattr(self, f) < 0:
+                raise ValueError(
+                    f"vibrato {f} must be >= 0, got {getattr(self, f)}")
 
     @property
     def type_id(self) -> int:
@@ -101,6 +238,11 @@ class SimpleTrajectory:
         lf1 = self.end.log_freq
         if self.type == 'fixed':
             out = lf0
+        elif self.type == 'vibrato':
+            out = vibrato_log_freq(
+                x, self.dur_tot, lf0, self.rate, self.extent_start,
+                self.extent_end, self.phase, self.vert_offset,
+            )
         elif self.type == 'cosine':
             pi_x = (math.cos(math.pi * (x + 1)) / 2) + 0.5
             out = pi_x * (lf1 - lf0) + lf0
@@ -111,13 +253,17 @@ class SimpleTrajectory:
         return 2 ** out
 
     def to_json(self) -> Dict:
-        return {
+        data: Dict = {
             'type': self.type,
             'typeId': self.type_id,
             'dots': [self.start.to_json(), self.end.to_json()],
             'slope': self.slope,
             'continuation': self.continuation,
         }
+        if self.type == 'vibrato':
+            for field, key in _VIBRATO_JSON_KEYS.items():
+                data[key] = getattr(self, field)
+        return data
 
     @staticmethod
     def from_json(obj: Dict) -> 'SimpleTrajectory':
@@ -128,6 +274,7 @@ class SimpleTrajectory:
             end=OrientationDot.from_json(dots[1]),
             slope=obj.get('slope', DEFAULT_SLOPE),
             continuation=obj.get('continuation', False),
+            **{field: obj.get(key) for field, key in _VIBRATO_JSON_KEYS.items()},
         )
 
 
@@ -137,7 +284,10 @@ def _lf(log_freqs: List[float], idx: int) -> float:
 
 
 def decompose_trajectory(
-    traj: 'Trajectory', start_time: Optional[float] = None
+    traj: 'Trajectory',
+    start_time: Optional[float] = None,
+    *,
+    vibrato_as_cosines: bool = False,
 ) -> List[SimpleTrajectory]:
     """Break a Trajectory into its simple-trajectory chunks.
 
@@ -145,6 +295,11 @@ def decompose_trajectory(
     defaults to ``traj.start_time`` (which, on trajectories inside a piece, is
     phrase-relative — pass an absolute time for piece-level output, as
     ``Piece.simplified_trajectories`` does).
+
+    An id 13 vibrato becomes one ``vibrato`` chunk carrying its v2 ``vib_obj``
+    numbers. ``vibrato_as_cosines=True`` selects the older lossy view instead
+    — one cosine per half period between consecutive extremes of the curve
+    (see ``vibrato_cosine_segments``).
     """
     t0 = start_time if start_time is not None else (traj.start_time or 0.0)
     d = traj.dur_tot
@@ -152,6 +307,15 @@ def decompose_trajectory(
     if traj.id == 12:
         return [SimpleTrajectory(
             'silent', OrientationDot(t0), OrientationDot(t0 + d)
+        )]
+
+    if traj.id == 13 and not vibrato_as_cosines:
+        v = traj.vib_obj
+        lf0 = traj.log_freqs[0]
+        return [SimpleTrajectory(
+            'vibrato',
+            OrientationDot(t0, lf0), OrientationDot(t0 + d, lf0),
+            **{f: v[f] for f in VIBRATO_FIELDS},
         )]
 
     lfs = traj.log_freqs
@@ -193,20 +357,7 @@ def decompose_trajectory(
             for i in range(len(da))
         ]
     elif traj.id == 13:
-        # Vibrato v2 (idtap-contract PROP-6): one cosine chunk per interval
-        # between consecutive extremes of the actual curve. The first and last
-        # intervals are the raised-cosine tapers from/to log_freqs[0], which
-        # are exactly a 'cosine' chunk; between two interior extremes the curve
-        # is a half cosine, exact when the extent is constant (every healed v1
-        # vibrato) and a close fit when it ramps (the chunk ends still sit on
-        # the curve; only the interior differs, by at most the ramp increment
-        # over one half period).
-        xs = traj.vib_breakpoints()
-        bounds = [math.log2(traj.id13(x)) for x in xs]
-        segs = [
-            ('cosine', xs[k + 1] - xs[k], bounds[k], bounds[k + 1], DEFAULT_SLOPE)
-            for k in range(len(xs) - 1)
-        ]
+        segs = vibrato_cosine_segments(traj)
     else:
         raise ValueError(f"cannot decompose trajectory with id {traj.id}")
 
@@ -227,11 +378,56 @@ def decompose_trajectory(
     return chunks
 
 
+def vibrato_cosine_segments(traj: 'Trajectory') -> List[tuple]:
+    """The cosine-chain view of an id 13 vibrato, as ``decompose_trajectory``
+    segments ``(type, fraction of dur_tot, start log_freq, end log_freq, slope)``.
+
+    One cosine chunk per interval between consecutive extremes of the actual
+    curve (idtap-contract PROP-6). The first and last intervals are the
+    raised-cosine tapers from/to ``log_freqs[0]``, which are exactly a
+    'cosine' chunk; between two interior extremes the curve is a half cosine,
+    exact when the extent is constant (every healed v1 vibrato) and a close
+    fit when it ramps (the chunk ends still sit on the curve; only the
+    interior differs, by at most the ramp increment over one half period).
+
+    This was the only decomposition of id 13 before the ``vibrato`` type
+    existed, so it is how earlier corpora were measured; it remains the
+    fallback for a poor vibrato fit on the producer side.
+    """
+    xs = traj.vib_breakpoints()
+    bounds = [math.log2(traj.id13(x)) for x in xs]
+    return [
+        ('cosine', xs[k + 1] - xs[k], bounds[k], bounds[k + 1], DEFAULT_SLOPE)
+        for k in range(len(xs) - 1)
+    ]
+
+
+VibratoSpec = Union[Mapping[str, float], Sequence[float]]
+
+
+def _vibrato_kwargs(spec: Optional[VibratoSpec], i: int) -> Dict[str, float]:
+    if spec is None:
+        return {}
+    if isinstance(spec, Mapping):
+        unknown = set(spec) - set(VIBRATO_FIELDS)
+        if unknown:
+            raise ValueError(
+                f"vibratos[{i}] has unknown keys {sorted(unknown)}; "
+                f"allowed: {list(VIBRATO_FIELDS)}")
+        return {k: float(v) for k, v in spec.items() if v is not None}
+    if len(spec) not in (4, 5):
+        raise ValueError(
+            f"vibratos[{i}] must be a mapping or a 4- or 5-sequence "
+            f"{VIBRATO_FIELDS} (vert_offset optional), got {len(spec)} values")
+    return {k: float(v) for k, v in zip(VIBRATO_FIELDS, spec)}
+
+
 def simple_trajectories_from_dots(
     times: Sequence[float],
     log_freqs: Sequence[Optional[float]],
     types: Sequence[Union[str, int]],
     slopes: Optional[Sequence[float]] = None,
+    vibratos: Optional[Sequence[Optional[VibratoSpec]]] = None,
     *,
     continuation: bool = False,
 ) -> List[SimpleTrajectory]:
@@ -248,8 +444,15 @@ def simple_trajectories_from_dots(
         times      (n,)    seconds, strictly increasing
         log_freqs  (n,)    log2(Hz); None for a dot bounding silence
         types      (n-1,)  'fixed' | 'cosine' | 'sloped-start' | 'sloped-end'
-                           | 'silent', or the matching TYPE_IDS integer
+                           | 'silent' | 'vibrato', or the matching TYPE_IDS
+                           integer
         slopes     (n-1,)  only the sloped types read it; defaults to 2.0
+        vibratos   (n-1,)  per chunk: None, or the PROP-6 numbers for a
+                           'vibrato' chunk as a mapping over rate /
+                           extent_start / extent_end / phase / vert_offset,
+                           or a sequence in that order (VIBRATO_FIELDS; the
+                           trailing vert_offset may be omitted). Required on
+                           every vibrato chunk, forbidden on every other.
 
     `continuation` marks every chunk after the first as continuing the one
     before, which is what `reconstruct_piece` groups on when it rebuilds
@@ -272,6 +475,9 @@ def simple_trajectories_from_dots(
     if slopes is not None and len(slopes) != n - 1:
         raise ValueError(
             f"{n - 1} chunks, but got {len(slopes)} slopes")
+    if vibratos is not None and len(vibratos) != n - 1:
+        raise ValueError(
+            f"{n - 1} chunks, but got {len(vibratos)} vibratos")
 
     by_id = {v: k for k, v in TYPE_IDS.items()}
     out: List[SimpleTrajectory] = []
@@ -287,11 +493,19 @@ def simple_trajectories_from_dots(
                     f"invalid simple trajectory type id: {typ!r}. "
                     f"Allowed ids: {sorted(by_id)}")
             typ = by_id[typ]
+        vib = _vibrato_kwargs(None if vibratos is None else vibratos[i], i)
+        if typ == 'vibrato' and not vib:
+            raise ValueError(
+                f"chunk {i} is a vibrato but vibratos[{i}] gives no numbers")
+        if typ != 'vibrato' and vib:
+            raise ValueError(
+                f"vibratos[{i}] is set but chunk {i} is {typ!r}, not 'vibrato'")
         out.append(SimpleTrajectory(
             type=typ,
             start=OrientationDot(float(times[i]), log_freqs[i]),
             end=OrientationDot(float(times[i + 1]), log_freqs[i + 1]),
             slope=DEFAULT_SLOPE if slopes is None else float(slopes[i]),
             continuation=continuation and i > 0,
+            **vib,
         ))
     return out

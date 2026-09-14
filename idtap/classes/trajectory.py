@@ -971,15 +971,20 @@ class Trajectory:
             self.vowel_ipa = None
             self.vowel_eng_trans = None
 
-    def to_simple(self, start_time: Optional[float] = None) -> List['SimpleTrajectory']:
+    def to_simple(
+        self, start_time: Optional[float] = None, *, vibrato_as_cosines: bool = False
+    ) -> List['SimpleTrajectory']:
         """Break this trajectory into simple-trajectory chunks.
 
         See ``idtap.classes.simple_trajectory`` for the representation.
         ``start_time`` sets the absolute time of the first orientation dot;
         defaults to this trajectory's own (phrase-relative) start_time.
+        ``vibrato_as_cosines`` selects the cosine-chain view of an id 13
+        instead of a single ``vibrato`` chunk.
         """
         from .simple_trajectory import decompose_trajectory
-        return decompose_trajectory(self, start_time)
+        return decompose_trajectory(
+            self, start_time, vibrato_as_cosines=vibrato_as_cosines)
 
     def to_json(self) -> Dict:
         data = {

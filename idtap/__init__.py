@@ -20,10 +20,13 @@ from .classes.raga import Raga
 from .classes.section import Section
 from .classes.reconstruct import reconstruct_piece
 from .classes.simple_trajectory import (
+    TYPE_IDS,
+    VIBRATO_FIELDS,
     OrientationDot,
     SimpleTrajectory,
     decompose_trajectory,
     simple_trajectories_from_dots,
+    vibrato_log_freq,
 )
 from .classes.trajectory import Trajectory
 
@@ -84,6 +87,9 @@ __all__ = [
     "OrientationDot",
     "decompose_trajectory",
     "simple_trajectories_from_dots",
+    "TYPE_IDS",
+    "VIBRATO_FIELDS",
+    "vibrato_log_freq",
     "Trajectory",
     "Instrument",
     "login_google",

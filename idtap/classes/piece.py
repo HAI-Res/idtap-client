@@ -925,19 +925,24 @@ class Piece:
                 trajs.extend(p.trajectory_grid[string_idx])
         return trajs
 
-    def simplified_trajectories(self, inst: int = 0, string_idx: int = 0) -> List['SimpleTrajectory']:
+    def simplified_trajectories(
+        self, inst: int = 0, string_idx: int = 0, *, vibrato_as_cosines: bool = False
+    ) -> List['SimpleTrajectory']:
         """All trajectories of a track broken into simple-trajectory chunks.
 
         Returns a flat, time-ordered list of SimpleTrajectory objects whose
         orientation-dot times are absolute piece time in seconds. See
         ``idtap.classes.simple_trajectory`` for the representation.
+        ``vibrato_as_cosines`` selects the cosine-chain view of id 13
+        vibratos instead of one ``vibrato`` chunk each.
         """
         from .simple_trajectory import decompose_trajectory
         trajs = self.all_trajectories(inst, string_idx)
         starts = self.traj_start_times(inst, string_idx)
         chunks: List['SimpleTrajectory'] = []
         for traj, start in zip(trajs, starts):
-            chunks.extend(decompose_trajectory(traj, start))
+            chunks.extend(decompose_trajectory(
+                traj, start, vibrato_as_cosines=vibrato_as_cosines))
         return chunks
 
     # ------------------------------------------------------------------
