@@ -193,14 +193,19 @@ def decompose_trajectory(
             for i in range(len(da))
         ]
     elif traj.id == 13:
-        periods = traj.vib_obj['periods']
-        n = 2 * periods
-        # Boundary values at each half-period are the vibrato curve's actual
-        # extremes; between adjacent extremes the curve is a half cosine.
-        bounds = [math.log2(traj.id13(k / n)) for k in range(n + 1)]
+        # Vibrato v2 (idtap-contract PROP-6): one cosine chunk per interval
+        # between consecutive extremes of the actual curve. The first and last
+        # intervals are the raised-cosine tapers from/to log_freqs[0], which
+        # are exactly a 'cosine' chunk; between two interior extremes the curve
+        # is a half cosine, exact when the extent is constant (every healed v1
+        # vibrato) and a close fit when it ramps (the chunk ends still sit on
+        # the curve; only the interior differs, by at most the ramp increment
+        # over one half period).
+        xs = traj.vib_breakpoints()
+        bounds = [math.log2(traj.id13(x)) for x in xs]
         segs = [
-            ('cosine', 1.0 / n, bounds[k], bounds[k + 1], DEFAULT_SLOPE)
-            for k in range(n)
+            ('cosine', xs[k + 1] - xs[k], bounds[k], bounds[k + 1], DEFAULT_SLOPE)
+            for k in range(len(xs) - 1)
         ]
     else:
         raise ValueError(f"cannot decompose trajectory with id {traj.id}")

@@ -165,6 +165,8 @@ def test_silent_chunk_has_no_log_freqs():
 
 
 def test_vibrato_decomposes_to_half_period_cosines():
+    # v1 input, healed to v2 on load (PROP-6); v2-specific shapes are covered
+    # in vibrato_v2_test.py
     traj = Trajectory({'id': 13, 'pitches': [Pitch()], 'dur_tot': 1.0,
                        'vib_obj': {'periods': 4, 'init_up': True,
                                    'extent': 0.06, 'vert_offset': 0.0}})

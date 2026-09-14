@@ -112,7 +112,7 @@ def test_vibrato_reconstructs_as_yoyo_with_same_curve_at_boundaries():
     out = rec.all_trajectories()
     assert len(out) == 1
     assert out[0].id == 6
-    n = 2 * traj.vib_obj['periods']
+    n = round(2 * traj.vib_obj['rate'] * traj.dur_tot)  # two extremes per cycle
     for k in range(n + 1):
         assert out[0].compute(k / n) == pytest.approx(
             traj.compute(k / n), rel=1e-6)
