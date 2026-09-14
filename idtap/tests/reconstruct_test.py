@@ -6,7 +6,9 @@ from idtap.classes.piece import Piece
 from idtap.classes.phrase import Phrase
 from idtap.classes.raga import Raga
 from idtap.classes.reconstruct import reconstruct_piece
-from idtap.classes.simple_trajectory import OrientationDot, SimpleTrajectory
+from idtap.classes.simple_trajectory import (
+    OrientationDot, SimpleTrajectory, decompose_trajectory,
+)
 from idtap.classes.trajectory import Trajectory
 from idtap.enums import Instrument
 
@@ -34,6 +36,11 @@ def make_vocal_piece():
                     'fund_id12': raga.fundamental,
                     'instrumentation': Instrument.Vocal_M}),
         Trajectory({'id': 5, 'pitches': [p[2], p[1], p[0]], 'dur_tot': 1.25,
+                    'instrumentation': Instrument.Vocal_M}),
+        Trajectory({'id': 13, 'pitches': [p[1]], 'dur_tot': 1.4,
+                    'vib_obj': {'rate': 4.3, 'extent_start': 0.02,
+                                'extent_end': 0.07, 'vert_offset': 0.0,
+                                'phase': 0.9},
                     'instrumentation': Instrument.Vocal_M}),
     ]
     phrase = Phrase({'trajectories': trajs, 'raga': raga,
@@ -98,17 +105,79 @@ def test_round_trip_slopes():
             assert b.slope == pytest.approx(a.slope)
 
 
-def test_vibrato_reconstructs_as_yoyo_with_same_curve_at_boundaries():
+def _vibrato_piece(vib=None, dur_tot=1.0):
     raga = Raga()
     p = vocal_pitches(raga, 1)
-    traj = Trajectory({'id': 13, 'pitches': p, 'dur_tot': 1.0,
-                       'instrumentation': Instrument.Vocal_M})
+    options = {'id': 13, 'pitches': p, 'dur_tot': dur_tot,
+               'instrumentation': Instrument.Vocal_M}
+    if vib is not None:
+        options['vib_obj'] = dict(vib)
+    traj = Trajectory(options)
     phrase = Phrase({'trajectories': [traj], 'raga': raga,
                      'instrumentation': [Instrument.Vocal_M.value]})
     piece = Piece({'phrases': [phrase], 'raga': raga,
                    'instrumentation': [Instrument.Vocal_M]})
-    rec = reconstruct_piece(piece.simplified_trajectories(), raga,
-                            Instrument.Vocal_M, synthetic=True)
+    return piece, traj, raga
+
+
+VIB_CASES = [
+    None,  # default vib_obj
+    {'rate': 3.7, 'extent_start': 0.06, 'extent_end': 0.02, 'vert_offset': 0.0, 'phase': 1.3},
+    {'rate': 0.8, 'extent_start': 0.0, 'extent_end': 0.08, 'vert_offset': 0.0, 'phase': -2.1},
+]
+
+
+@pytest.mark.parametrize('vib', VIB_CASES)
+def test_vibrato_round_trips_to_id13_with_identical_vib_obj_and_curve(vib):
+    piece, traj, raga = _vibrato_piece(vib, 1.3)
+    chunks = piece.simplified_trajectories()
+    assert [c.type for c in chunks] == ['vibrato']
+    rec = reconstruct_piece(chunks, raga, Instrument.Vocal_M, synthetic=True)
+    out = rec.all_trajectories()
+    assert len(out) == 1
+    assert out[0].id == 13
+    assert out[0].vib_obj == traj.vib_obj            # field for field, exact
+    assert out[0].vib_obj['vert_offset'] == 0.0
+    assert out[0].dur_tot == pytest.approx(traj.dur_tot)
+    assert out[0].log_freqs[0] == pytest.approx(traj.log_freqs[0], abs=1e-12)
+    for k in range(0, 1001):
+        x = k / 1000
+        expected = traj.compute(x)
+        assert abs(out[0].compute(x) - expected) <= 1e-12 * expected
+        assert abs(chunks[0].compute(x) - expected) <= 1e-12 * expected
+
+
+def test_vibrato_chunk_survives_piece_json_and_redecomposes_identically():
+    # the platform's guarantee to a machine producer: a vibrato token written
+    # into a piece, saved, and reopened by a human comes back as the same
+    # chunk, numbers equal in floating point and both dots on the centre
+    raga = Raga()
+    centre = math.log2(vocal_pitches(raga, 1)[0].frequency) + 0.0137
+    chunk = SimpleTrajectory(
+        'vibrato', OrientationDot(0.0, centre), OrientationDot(1.35, centre),
+        rate=5.31, extent_start=0.0412, extent_end=0.0198, phase=2.417)
+    rec = reconstruct_piece([chunk], raga, Instrument.Vocal_M, synthetic=True)
+    reopened = Piece.from_json(rec.to_json())
+    out = reopened.all_trajectories()
+    assert [t.id for t in out] == [13]
+    back = reopened.simplified_trajectories()
+    assert len(back) == 1
+    b = back[0]
+    assert b.type == 'vibrato'
+    assert (b.rate, b.extent_start, b.extent_end, b.phase) == (
+        5.31, 0.0412, 0.0198, 2.417)
+    assert b.start.time == 0.0
+    assert b.end.time == pytest.approx(1.35, abs=1e-12)
+    assert b.start.log_freq == b.end.log_freq
+    assert b.start.log_freq == pytest.approx(centre, abs=1e-12)
+    assert decompose_trajectory(out[0], 0.0) == back
+
+
+def test_vibrato_cosine_chain_view_still_reconstructs_as_yoyo():
+    piece, traj, raga = _vibrato_piece()
+    rec = reconstruct_piece(
+        piece.simplified_trajectories(vibrato_as_cosines=True), raga,
+        Instrument.Vocal_M, synthetic=True)
     out = rec.all_trajectories()
     assert len(out) == 1
     assert out[0].id == 6
@@ -147,6 +216,34 @@ def chunk(type_, t0, t1, lf0=8.0, lf1=8.0, continuation=False, slope=2.0):
         slope=slope,
         continuation=continuation,
     )
+
+
+def vib_chunk(t0, t1, lf=8.0, continuation=False, **vib):
+    vib = {'rate': 5.0, 'extent_start': 0.05, **vib}
+    return SimpleTrajectory('vibrato', OrientationDot(t0, lf),
+                            OrientationDot(t1, lf), continuation=continuation,
+                            **vib)
+
+
+def test_vibrato_is_never_swallowed_by_a_composite():
+    # a continuation group of cosines would become a yoyo; with a vibrato in
+    # it every chunk stays a primitive and the vibrato is its own id 13
+    chunks = [
+        chunk('cosine', 0.0, 1.0, 8.0, 8.1),
+        chunk('cosine', 1.0, 2.0, 8.1, 8.0, continuation=True),
+        vib_chunk(2.0, 3.0, continuation=True),
+        chunk('cosine', 3.0, 4.0, 8.0, 8.1, continuation=True),
+    ]
+    rec = reconstruct_piece(chunks, Raga(), Instrument.Vocal_M, synthetic=True)
+    trajs = rec.all_trajectories()
+    assert [t.id for t in trajs] == [1, 1, 13, 1]
+    assert trajs[2].vib_obj == {'rate': 5.0, 'extent_start': 0.05,
+                                'extent_end': 0.05, 'vert_offset': 0.0,
+                                'phase': 0.0}
+    # and a lone vibrato in a group of one
+    rec = reconstruct_piece([vib_chunk(0.0, 1.0, continuation=True)], Raga(),
+                            Instrument.Vocal_M, synthetic=True)
+    assert [t.id for t in rec.all_trajectories()] == [13]
 
 
 def test_unmatched_group_splits_into_primitives():
@@ -282,7 +379,15 @@ def test_real_piece_vocal_track_round_trip():
     out = rec.all_trajectories()
 
     assert len(rec.phrases) == 1
-    assert [t.id for t in out] == [6 if t.id == 13 else t.id for t in orig]
+    # the fixture's id 13 (vert_offset 0) now round-trips as id 13; the
+    # cosine-chain view still maps it to a yoyo
+    assert 13 in [t.id for t in orig]
+    assert [t.id for t in out] == [t.id for t in orig]
+    chain = reconstruct_piece(
+        piece.simplified_trajectories(0, 0, vibrato_as_cosines=True),
+        piece.raga, piece.instrumentation[0], synthetic=True)
+    assert [t.id for t in chain.all_trajectories()] == [
+        6 if t.id == 13 else t.id for t in orig]
     assert rec.dur_tot == pytest.approx(sum(t.dur_tot for t in orig))
     for a, b in zip(orig, out):
         assert b.dur_tot == pytest.approx(a.dur_tot)

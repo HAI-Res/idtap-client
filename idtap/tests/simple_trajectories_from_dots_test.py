@@ -97,3 +97,61 @@ def test_round_trips_with_decompose_trajectory():
         assert a.end.time == pytest.approx(b.end.time)
         assert a.start.log_freq == pytest.approx(b.start.log_freq)
         assert a.end.log_freq == pytest.approx(b.end.log_freq)
+
+
+# ------------------------------------------------------------------ vibrato
+
+VIB = {'rate': 5.5, 'extent_start': 0.05, 'extent_end': 0.03, 'phase': 1.0}
+
+
+def test_vibrato_chunks_take_their_numbers_as_mapping_or_sequence():
+    by_map = simple_trajectories_from_dots(
+        [0.0, 1.0, 2.0], [7.0, 7.0, 7.2], ['vibrato', 'cosine'],
+        vibratos=[VIB, None])
+    by_seq = simple_trajectories_from_dots(
+        [0.0, 1.0, 2.0], [7.0, 7.0, 7.2], [5, 1],
+        vibratos=[(5.5, 0.05, 0.03, 1.0), None])
+    assert by_map == by_seq
+    v = by_map[0]
+    assert v.type == 'vibrato'
+    assert (v.rate, v.extent_start, v.extent_end, v.phase) == (5.5, 0.05, 0.03, 1.0)
+    assert by_map[1].rate is None
+
+
+def test_vibrato_mapping_may_omit_the_defaulted_numbers():
+    chunks = simple_trajectories_from_dots(
+        [0.0, 1.0], [7.0, 7.0], ['vibrato'],
+        vibratos=[{'rate': 4.0, 'extent_start': 0.05}])
+    assert (chunks[0].extent_end, chunks[0].phase) == (0.05, 0.0)
+
+
+@pytest.mark.parametrize("types, vibratos, message", [
+    (['vibrato'], None, "gives no numbers"),
+    (['vibrato'], [None], "gives no numbers"),
+    (['fixed'], [VIB], "not 'vibrato'"),
+    (['vibrato'], [VIB, VIB], "vibratos"),
+    (['vibrato'], [(5.5, 0.05)], "4-sequence"),
+    (['vibrato'], [{'rate': 5.5, 'extent_start': 0.05, 'wobble': 1}], "unknown keys"),
+    (['vibrato'], [{'rate': -1.0, 'extent_start': 0.05}], "rate must be > 0"),
+])
+def test_rejects_malformed_vibratos(types, vibratos, message):
+    with pytest.raises(ValueError, match=message):
+        simple_trajectories_from_dots([0.0, 1.0], [7.0, 7.0], types,
+                                      vibratos=vibratos)
+
+
+def test_vibrato_round_trips_with_decompose_trajectory():
+    traj = Trajectory({
+        'id': 13, 'pitches': [Pitch({'swara': 2})], 'dur_tot': 1.7,
+        'vib_obj': {'rate': 6.1, 'extent_start': 0.04, 'extent_end': 0.06,
+                    'vert_offset': 0.0, 'phase': 2.2},
+    })
+    original = decompose_trajectory(traj, start_time=1.0)
+    assert [c.type for c in original] == ['vibrato']
+    times = [original[0].start.time, original[0].end.time]
+    log_freqs = [original[0].start.log_freq, original[0].end.log_freq]
+    rebuilt = simple_trajectories_from_dots(
+        times, log_freqs, ['vibrato'],
+        vibratos=[[getattr(original[0], f) for f in
+                   ('rate', 'extent_start', 'extent_end', 'phase')]])
+    assert rebuilt == original

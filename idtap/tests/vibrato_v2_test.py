@@ -8,7 +8,9 @@
 - stored v1 fields may be strings / non-integer and are coerced, not truncated;
 - validation: v2 keys strict, v1 keys accepted, rate > 0, extents >= 0;
 - PROP-6b: vibObj is emitted only for id 13, accepted and ignored elsewhere;
-- decompose_trajectory reproduces the v2 curve chunk-by-chunk.
+- decompose_trajectory's cosine-chain view (``vibrato_as_cosines=True``)
+  reproduces the v2 curve chunk-by-chunk; the default single ``vibrato``
+  chunk is covered in simple_trajectory_test.py.
 """
 import json
 import math
@@ -347,7 +349,8 @@ def test_degenerate_short_trajectory_two_tapers_meet_at_one_extreme():
     assert len(xs) == 3
     assert xs[1] == pytest.approx(0.4)
     assert abs(math.log2(t.id13(0.4)) - t.log_freqs[0]) == pytest.approx(0.025)
-    assert len(decompose_trajectory(t)) == 2
+    assert len(decompose_trajectory(t, vibrato_as_cosines=True)) == 2
+    assert_matches_compute(t, vibrato_as_cosines=True)
     assert_matches_compute(t)
 
 
@@ -383,17 +386,31 @@ def test_extent_ramp_and_offset_clamp():
 ])
 def test_decompose_reproduces_v2_curve_exactly(vib, dur_tot):
     t = _vib13(vib, dur_tot)
-    chunks = decompose_trajectory(t, 1.5)
+    chunks = decompose_trajectory(t, 1.5, vibrato_as_cosines=True)
     assert all(c.type == 'cosine' for c in chunks)
     assert [c.continuation for c in chunks] == [False] + [True] * (len(chunks) - 1)
     assert len(chunks) == len(t.vib_breakpoints()) - 1
+    assert_matches_compute(t, 1.5, vibrato_as_cosines=True)
+    # and the default view, one vibrato chunk (or the same chain when the
+    # trajectory carries a vert_offset the chunk cannot), matches too
     assert_matches_compute(t, 1.5)
+
+
+def test_default_decompose_is_one_vibrato_chunk_unless_offset():
+    centred = _vib13({'rate': 5.5, 'extentStart': 0.05, 'extentEnd': 0.05,
+                      'vertOffset': 0, 'phase': math.pi}, 2.0)
+    offset = _vib13({'rate': 5.5, 'extentStart': 0.05, 'extentEnd': 0.05,
+                     'vertOffset': 0.01, 'phase': math.pi}, 2.0)
+    assert [c.type for c in decompose_trajectory(centred)] == ['vibrato']
+    chain = decompose_trajectory(offset)
+    assert all(c.type == 'cosine' for c in chain)
+    assert chain == decompose_trajectory(offset, vibrato_as_cosines=True)
 
 
 def test_decompose_ramp_chunk_ends_sit_on_curve_and_interior_is_close():
     t = _vib13({'rate': 5.5, 'extentStart': 0.0, 'extentEnd': 0.08,
                 'vertOffset': 0.01, 'phase': math.pi}, dur_tot=2.0)
-    chunks = decompose_trajectory(t)
+    chunks = decompose_trajectory(t, vibrato_as_cosines=True)
     for c in chunks:
         assert chunk_freq_at(c, c.start.time) == pytest.approx(
             t.compute(c.start.time / 2.0), rel=1e-9)
