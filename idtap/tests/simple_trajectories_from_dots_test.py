@@ -114,8 +114,14 @@ def test_vibrato_chunks_take_their_numbers_as_mapping_or_sequence():
     assert by_map == by_seq
     v = by_map[0]
     assert v.type == 'vibrato'
-    assert (v.rate, v.extent_start, v.extent_end, v.phase) == (5.5, 0.05, 0.03, 1.0)
+    assert (v.rate, v.extent_start, v.extent_end, v.phase, v.vert_offset) == (
+        5.5, 0.05, 0.03, 1.0, 0.0)
     assert by_map[1].rate is None
+    # a 5-sequence carries the lean too
+    leaning = simple_trajectories_from_dots(
+        [0.0, 1.0], [7.0, 7.0], ['vibrato'],
+        vibratos=[(5.5, 0.05, 0.03, 1.0, 0.01)])
+    assert leaning[0].vert_offset == 0.01
 
 
 def test_vibrato_mapping_may_omit_the_defaulted_numbers():
@@ -130,7 +136,8 @@ def test_vibrato_mapping_may_omit_the_defaulted_numbers():
     (['vibrato'], [None], "gives no numbers"),
     (['fixed'], [VIB], "not 'vibrato'"),
     (['vibrato'], [VIB, VIB], "vibratos"),
-    (['vibrato'], [(5.5, 0.05)], "4-sequence"),
+    (['vibrato'], [(5.5, 0.05)], "4- or 5-sequence"),
+    (['vibrato'], [(5.5, 0.05, 0.03, 1.0, 0.0, 9.0)], "4- or 5-sequence"),
     (['vibrato'], [{'rate': 5.5, 'extent_start': 0.05, 'wobble': 1}], "unknown keys"),
     (['vibrato'], [{'rate': -1.0, 'extent_start': 0.05}], "rate must be > 0"),
 ])

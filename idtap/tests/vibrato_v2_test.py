@@ -391,20 +391,12 @@ def test_decompose_reproduces_v2_curve_exactly(vib, dur_tot):
     assert [c.continuation for c in chunks] == [False] + [True] * (len(chunks) - 1)
     assert len(chunks) == len(t.vib_breakpoints()) - 1
     assert_matches_compute(t, 1.5, vibrato_as_cosines=True)
-    # and the default view, one vibrato chunk (or the same chain when the
-    # trajectory carries a vert_offset the chunk cannot), matches too
+    # and the default view, one vibrato chunk carrying all five numbers
+    # (vert_offset included), matches too
+    default = decompose_trajectory(t, 1.5)
+    assert [c.type for c in default] == ['vibrato']
+    assert default[0].vert_offset == t.vib_obj['vert_offset']
     assert_matches_compute(t, 1.5)
-
-
-def test_default_decompose_is_one_vibrato_chunk_unless_offset():
-    centred = _vib13({'rate': 5.5, 'extentStart': 0.05, 'extentEnd': 0.05,
-                      'vertOffset': 0, 'phase': math.pi}, 2.0)
-    offset = _vib13({'rate': 5.5, 'extentStart': 0.05, 'extentEnd': 0.05,
-                     'vertOffset': 0.01, 'phase': math.pi}, 2.0)
-    assert [c.type for c in decompose_trajectory(centred)] == ['vibrato']
-    chain = decompose_trajectory(offset)
-    assert all(c.type == 'cosine' for c in chain)
-    assert chain == decompose_trajectory(offset, vibrato_as_cosines=True)
 
 
 def test_decompose_ramp_chunk_ends_sit_on_curve_and_interior_is_close():

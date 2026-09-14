@@ -12,7 +12,6 @@ from idtap.classes.simple_trajectory import (
     OrientationDot,
     SimpleTrajectory,
     decompose_trajectory,
-    vibrato_cosine_segments,
     vibrato_log_freq,
 )
 from idtap.classes.piece import Piece
@@ -173,7 +172,8 @@ def test_type_ids_are_stable():
     # appended, never renumbered into the existing five
     assert TYPE_IDS == {'fixed': 0, 'cosine': 1, 'sloped-start': 2,
                         'sloped-end': 3, 'silent': 4, 'vibrato': 5}
-    assert VIBRATO_FIELDS == ('rate', 'extent_start', 'extent_end', 'phase')
+    assert VIBRATO_FIELDS == (
+        'rate', 'extent_start', 'extent_end', 'phase', 'vert_offset')
 
 
 VIB_CASES = [
@@ -184,6 +184,10 @@ VIB_CASES = [
     ({'rate': 1.0, 'extent_start': 0.05, 'extent_end': 0.05, 'vert_offset': 0.0, 'phase': 0.2 * math.pi}, 1.0),
     ({'rate': 0.6, 'extent_start': 0.03, 'extent_end': 0.05, 'vert_offset': 0.0, 'phase': math.pi / 2}, 0.3),
     ({'rate': 8.9, 'extent_start': 0.1, 'extent_end': 0.01, 'vert_offset': 0.0, 'phase': -2.7}, 3.1),
+    # leaning vibratos: offset within +-A, and one clamped to +-A(x) along a ramp
+    ({'rate': 5.0, 'extent_start': 0.06, 'extent_end': 0.06, 'vert_offset': 0.03, 'phase': math.pi}, 1.0),
+    ({'rate': 4.0, 'extent_start': 0.0, 'extent_end': 0.08, 'vert_offset': -0.01, 'phase': 0.7}, 2.0),
+    ({'rate': 2.5, 'extent_start': 0.04, 'extent_end': 0.04, 'vert_offset': 0.9, 'phase': math.pi}, 2.0),
 ]
 
 
@@ -205,8 +209,7 @@ def test_vibrato_decomposes_to_one_chunk_carrying_the_vib_obj(vib, dur_tot):
     assert c.start == OrientationDot(2.0, traj.log_freqs[0])
     assert c.end == OrientationDot(2.0 + dur_tot, traj.log_freqs[0])
     # a rename, not a fit
-    assert (c.rate, c.extent_start, c.extent_end, c.phase) == (
-        vib['rate'], vib['extent_start'], vib['extent_end'], vib['phase'])
+    assert {f: getattr(c, f) for f in VIBRATO_FIELDS} == vib
     assert_matches_compute(traj, 2.0)
 
 
@@ -220,32 +223,26 @@ def test_vibrato_chunk_compute_matches_id13_to_1e12(vib, dur_tot):
         assert abs(c.compute(x) - expected) <= 1e-12 * abs(expected), (x, vib)
         assert abs(vibrato_log_freq(
             x, dur_tot, traj.log_freqs[0], vib['rate'], vib['extent_start'],
-            vib['extent_end'], vib['phase']) - math.log2(expected)) <= 1e-12
-
-
-def test_vibrato_log_freq_with_offset_matches_id13():
-    vib = {'rate': 4.0, 'extent_start': 0.0, 'extent_end': 0.08,
-           'vert_offset': 0.01, 'phase': math.pi}
-    traj = _vib13(vib, 2.0)
-    for k in range(0, 1001):
-        x = k / 1000
-        assert vibrato_log_freq(
-            x, 2.0, traj.log_freqs[0], vib['rate'], vib['extent_start'],
             vib['extent_end'], vib['phase'], vib['vert_offset'],
-        ) == pytest.approx(math.log2(traj.id13(x)), abs=1e-12)
+        ) - math.log2(expected)) <= 1e-12
 
 
-def test_vibrato_with_vert_offset_falls_back_to_cosine_chain():
-    # the chunk has no offset field; the chain is what still reproduces the
-    # curve, and the ends stay on the notated pitch
-    traj = _vib13({'rate': 5.5, 'extent_start': 0.05, 'extent_end': 0.05,
-                   'vert_offset': 0.01, 'phase': math.pi}, 2.0)
-    chunks = decompose_trajectory(traj, 1.0)
-    assert all(c.type == 'cosine' for c in chunks)
-    assert len(chunks) == len(vibrato_cosine_segments(traj))
-    assert chunks[0].start.log_freq == traj.log_freqs[0]
-    assert chunks[-1].end.log_freq == pytest.approx(traj.log_freqs[0])
-    assert_matches_compute(traj, 1.0)
+def test_leaning_vibrato_attacks_from_the_dot_and_oscillates_off_centre():
+    # vert_offset = +A: the oscillation runs from the dot up to dot + extent
+    # and never below it, yet the note still starts and ends on the dot. A
+    # shifted dot could not say this, which is why the offset is a field.
+    dots = (OrientationDot(0.0, 7.0), OrientationDot(1.0, 7.0))
+    c = SimpleTrajectory('vibrato', *dots, rate=5.0, extent_start=0.06,
+                         phase=math.pi, vert_offset=0.03)
+    ys = [math.log2(c.compute(k / 2000)) - 7.0 for k in range(2001)]
+    assert ys[0] == pytest.approx(0.0, abs=1e-12)
+    assert ys[-1] == pytest.approx(0.0, abs=1e-12)
+    assert min(ys) >= -1e-12
+    assert max(ys) == pytest.approx(0.06, abs=1e-6)
+    # a vibrato with no lean is the same chunk as one that says so explicitly
+    assert SimpleTrajectory('vibrato', *dots, rate=5.0, extent_start=0.06) == \
+        SimpleTrajectory('vibrato', *dots, rate=5.0, extent_start=0.06,
+                         vert_offset=0.0)
 
 
 def test_vibrato_as_cosines_flag_selects_the_chain():
@@ -263,27 +260,31 @@ def test_vibrato_json_round_trip_and_keys():
     c = decompose_trajectory(traj, 1.5)[0]
     data = c.to_json()
     assert data['typeId'] == 5
-    assert (data['rate'], data['extentStart'], data['extentEnd'], data['phase']) == (
-        c.rate, c.extent_start, c.extent_end, c.phase)
+    assert (data['rate'], data['extentStart'], data['extentEnd'], data['phase'],
+            data['vertOffset']) == (
+        c.rate, c.extent_start, c.extent_end, c.phase, c.vert_offset)
     assert SimpleTrajectory.from_json(data) == c
+    # a vibrato chunk serialized without vertOffset (before it was a field)
+    # loads with offset 0
+    del data['vertOffset']
+    assert SimpleTrajectory.from_json(data).vert_offset == 0.0
     # non-vibrato chunks never carry the vibrato keys ...
     fixed = decompose_trajectory(
         Trajectory({'id': 0, 'pitches': [Pitch()], 'dur_tot': 1.0}))[0].to_json()
-    assert not {'rate', 'extentStart', 'extentEnd', 'phase'} & set(fixed)
+    assert not {'rate', 'extentStart', 'extentEnd', 'phase', 'vertOffset'} & set(fixed)
     # ... and a chunk serialized before the type existed still loads
     old = {'type': 'cosine', 'typeId': 1,
            'dots': [{'time': 0.0, 'logFreq': 7.0}, {'time': 1.0, 'logFreq': 7.1}],
            'slope': 2.0, 'continuation': True}
     loaded = SimpleTrajectory.from_json(old)
     assert loaded.type == 'cosine'
-    assert (loaded.rate, loaded.extent_start, loaded.extent_end, loaded.phase) == (
-        None, None, None, None)
+    assert all(getattr(loaded, f) is None for f in VIBRATO_FIELDS)
 
 
 def test_vibrato_fields_default_and_validate():
     dots = (OrientationDot(0.0, 7.0), OrientationDot(1.0, 7.0))
     c = SimpleTrajectory('vibrato', *dots, rate=5.0, extent_start=0.04)
-    assert (c.extent_end, c.phase) == (0.04, 0.0)
+    assert (c.extent_end, c.phase, c.vert_offset) == (0.04, 0.0, 0.0)
     assert c.compute(0.0) == pytest.approx(2 ** 7.0)
     assert c.compute(1.0) == pytest.approx(2 ** 7.0)
     with pytest.raises(ValueError, match="requires rate"):
@@ -310,6 +311,8 @@ def test_vibrato_fields_rejected_on_other_types(typ):
         SimpleTrajectory(typ, *dots, rate=5.0)
     with pytest.raises(ValueError, match="vibrato-only"):
         SimpleTrajectory(typ, *dots, phase=0.0)
+    with pytest.raises(ValueError, match="vibrato-only"):
+        SimpleTrajectory(typ, *dots, vert_offset=0.0)
 
 
 def test_vibrato_decomposes_to_half_period_cosines():

@@ -124,6 +124,8 @@ VIB_CASES = [
     None,  # default vib_obj
     {'rate': 3.7, 'extent_start': 0.06, 'extent_end': 0.02, 'vert_offset': 0.0, 'phase': 1.3},
     {'rate': 0.8, 'extent_start': 0.0, 'extent_end': 0.08, 'vert_offset': 0.0, 'phase': -2.1},
+    {'rate': 5.0, 'extent_start': 0.06, 'extent_end': 0.06, 'vert_offset': 0.03, 'phase': math.pi},
+    {'rate': 4.0, 'extent_start': 0.0, 'extent_end': 0.08, 'vert_offset': 0.01, 'phase': 0.7},
 ]
 
 
@@ -137,7 +139,6 @@ def test_vibrato_round_trips_to_id13_with_identical_vib_obj_and_curve(vib):
     assert len(out) == 1
     assert out[0].id == 13
     assert out[0].vib_obj == traj.vib_obj            # field for field, exact
-    assert out[0].vib_obj['vert_offset'] == 0.0
     assert out[0].dur_tot == pytest.approx(traj.dur_tot)
     assert out[0].log_freqs[0] == pytest.approx(traj.log_freqs[0], abs=1e-12)
     for k in range(0, 1001):
@@ -155,7 +156,8 @@ def test_vibrato_chunk_survives_piece_json_and_redecomposes_identically():
     centre = math.log2(vocal_pitches(raga, 1)[0].frequency) + 0.0137
     chunk = SimpleTrajectory(
         'vibrato', OrientationDot(0.0, centre), OrientationDot(1.35, centre),
-        rate=5.31, extent_start=0.0412, extent_end=0.0198, phase=2.417)
+        rate=5.31, extent_start=0.0412, extent_end=0.0198, phase=2.417,
+        vert_offset=0.0073)
     rec = reconstruct_piece([chunk], raga, Instrument.Vocal_M, synthetic=True)
     reopened = Piece.from_json(rec.to_json())
     out = reopened.all_trajectories()
@@ -164,8 +166,8 @@ def test_vibrato_chunk_survives_piece_json_and_redecomposes_identically():
     assert len(back) == 1
     b = back[0]
     assert b.type == 'vibrato'
-    assert (b.rate, b.extent_start, b.extent_end, b.phase) == (
-        5.31, 0.0412, 0.0198, 2.417)
+    assert (b.rate, b.extent_start, b.extent_end, b.phase, b.vert_offset) == (
+        5.31, 0.0412, 0.0198, 2.417, 0.0073)
     assert b.start.time == 0.0
     assert b.end.time == pytest.approx(1.35, abs=1e-12)
     assert b.start.log_freq == b.end.log_freq
@@ -379,8 +381,8 @@ def test_real_piece_vocal_track_round_trip():
     out = rec.all_trajectories()
 
     assert len(rec.phrases) == 1
-    # the fixture's id 13 (vert_offset 0) now round-trips as id 13; the
-    # cosine-chain view still maps it to a yoyo
+    # the fixture's id 13 now round-trips as id 13; the cosine-chain view
+    # still maps it to a yoyo
     assert 13 in [t.id for t in orig]
     assert [t.id for t in out] == [t.id for t in orig]
     chain = reconstruct_piece(

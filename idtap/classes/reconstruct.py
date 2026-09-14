@@ -26,8 +26,8 @@ Design constraints (see project notes):
                                      ``vibrato_as_cosines`` also lands here)
       [silent]                 -> 12
       [vibrato]                -> 13 (the chunk's rate / extent_start /
-                                     extent_end / phase become the v2
-                                     ``vib_obj`` verbatim, vert_offset 0)
+                                     extent_end / phase / vert_offset become
+                                     the v2 ``vib_obj`` verbatim)
 
   A ``vibrato`` chunk is always its own trajectory: a continuation group that
   contains one is split into primitives rather than matched against the
@@ -121,7 +121,7 @@ def _primitive_traj(chunk: SimpleTrajectory, raga: Raga, inst: Instrument) -> Tr
             'rate': chunk.rate,
             'extent_start': chunk.extent_start,
             'extent_end': chunk.extent_end,
-            'vert_offset': 0.0,
+            'vert_offset': chunk.vert_offset,
             'phase': chunk.phase,
         }
     return Trajectory(options)
