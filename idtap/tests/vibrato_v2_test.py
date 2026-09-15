@@ -413,3 +413,54 @@ def test_decompose_ramp_chunk_ends_sit_on_curve_and_interior_is_close():
         for u in (0.25, 0.5, 0.75):
             tt = c.start.time + u * c.dur_tot
             assert abs(math.log2(chunk_freq_at(c, tt)) - math.log2(t.compute(tt / 2.0))) < 0.04 / 22
+
+
+# ------------------------------------------------- durArray on a fresh id 13
+
+def test_fresh_id13_gets_a_dur_array():
+    """A vibrato is one segment, so it defaults to [1] like a `fixed`.
+
+    Regression: the constructor defaulted `dur_array` for ids 0-11 and skipped
+    13, so an id 13 built from scratch serialised with ``durArray: null``. The
+    editor never hit it, because retyping an existing trajectory inherits its
+    array, but `reconstruct`'s vibrato path builds one from nothing -- and the
+    web app maps over `durArray` for every sounding trajectory and throws on
+    null, so an uploaded machine transcription would not render at all.
+    """
+    t = _vib13({'rate': 5.0, 'extentStart': 0.05, 'extentEnd': 0.05,
+                'vertOffset': 0.0, 'phase': 0.0}, dur_tot=2.0)
+    assert t.dur_array == [1]
+    assert t.to_json()['durArray'] == [1]
+
+
+def test_id13_keeps_an_explicit_dur_array():
+    t = _vib13({'rate': 5.0, 'extentStart': 0.05, 'extentEnd': 0.05,
+                'vertOffset': 0.0, 'phase': 0.0}, dur_tot=2.0, dur_array=[1.0])
+    assert t.dur_array == [1.0]
+
+
+def test_reconstructed_vibrato_carries_a_dur_array():
+    """The path that actually broke: a vibrato chunk through reconstruct_piece.
+
+    Asserts it for every sounding trajectory, not just the vibrato, because the
+    web app's failure mode is per-trajectory and this is the cheapest place to
+    catch the next id that has no default.
+    """
+    from idtap.classes.simple_trajectory import simple_trajectories_from_dots
+    from idtap.classes.reconstruct import reconstruct_piece
+    from idtap.classes.raga import Raga
+    from idtap.enums import Instrument
+
+    chunks = simple_trajectories_from_dots(
+        times=[0.0, 2.0], log_freqs=[0.0, 0.0], types=['vibrato'],
+        vibratos=[{'rate': 5.0, 'extent_start': 0.05, 'extent_end': 0.05,
+                   'phase': 0.0, 'vert_offset': 0.0}])
+    piece = reconstruct_piece(chunks, Raga(), Instrument.Vocal_M,
+                              synthetic=True)
+    trajs = piece.all_trajectories()
+    assert any(t.id == 13 for t in trajs)
+    for t in trajs:
+        if t.id == 12:                      # silence is skipped by the app
+            continue
+        assert t.dur_array, f"id {t.id} has no dur_array"
+        assert t.to_json()['durArray'], f"id {t.id} serialises durArray as null"

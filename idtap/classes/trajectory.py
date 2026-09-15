@@ -244,6 +244,15 @@ class Trajectory:
 
         if self.id < 4:
             self.dur_array = [1]
+        elif self.dur_array is None and self.id == 13:
+            # A vibrato is one segment, like a `fixed`. Without this an id 13
+            # built from scratch -- which only `reconstruct`'s vibrato path does,
+            # since the editor retypes an existing trajectory and inherits its
+            # array -- serialises with durArray: null, and the web app's
+            # `Piece.allDisplaySargam` maps over it for every sounding
+            # trajectory and throws. The contract's enum-id-13-vibrato fixture
+            # carries [1.0], which is what this restores.
+            self.dur_array = [1]
         elif self.dur_array is None and self.id == 4:
             self.dur_array = [1/3, 2/3]
         elif self.dur_array is None and self.id == 5:
