@@ -54,12 +54,26 @@ VOCAL = ("Vocal (M)", "Vocal (F)")
 
 
 # --------------------------------------------------------------------------- input
+def tracks(doc):
+    """The document's phrase grid. Old documents carry a single-track
+    `phrases` list instead of `phraseGrid`; Piece.from_json reads it the same way."""
+    if doc.get("phraseGrid") is not None:
+        return doc["phraseGrid"]
+    if doc.get("phrases") is not None:
+        return [doc["phrases"]]
+    return []
+
+
 def _unwrap(x):
     """Mongo extended JSON -> plain values ({"$oid"} -> str; {"$date"} kept,
     Piece parses it). Applied identically for A and B."""
     if isinstance(x, dict):
         if set(x) == {"$oid"}:
             return x["$oid"]
+        if set(x) == {"$numberInt"} or set(x) == {"$numberLong"}:
+            return int(next(iter(x.values())))
+        if set(x) == {"$numberDouble"}:
+            return float(x["$numberDouble"])
         return {k: _unwrap(v) for k, v in x.items()}
     if isinstance(x, list):
         return [_unwrap(v) for v in x]
@@ -72,7 +86,7 @@ AS_LEGACY = False  # set by --as-legacy (passed on to the workers)
 def _as_legacy(doc):
     """Drop the 0.3.0 keys: what a pre-0.3.0 database holds."""
     doc = {k: v for k, v in doc.items() if k not in ("system", "lyricsText")}
-    for track in doc.get("phraseGrid") or []:
+    for track in tracks(doc):
         for ph in track or []:
             if isinstance(ph, dict):
                 ph.pop("syllables", None)
@@ -106,8 +120,10 @@ def _iter_documents(src):
         elif isinstance(data, dict) and "cases" in data:
             for c in data["cases"]:
                 yield f"{rel}#{c.get('name')}", _unwrap(c["pieceJson"])
-        elif isinstance(data, dict) and "phraseGrid" in data:
+        elif isinstance(data, dict) and ("phraseGrid" in data or "phrases" in data):
             yield rel, _unwrap(data)
+        elif isinstance(data, dict) and "_id" in data:
+            yield rel, _unwrap(data)  # e.g. an empty stub: still attempted and reported
 
 
 # --------------------------------------------------------------------------- extraction
@@ -119,7 +135,7 @@ def legacy_grid(doc):
     """[[ [ {field: json text} per row-0 traj ] per phrase ] per track]: the
     legacy fields exactly as serialized (absent fields omitted)."""
     out = []
-    for track in doc.get("phraseGrid") or []:
+    for track in tracks(doc):
         trow = []
         for ph in track or []:
             grid = (ph or {}).get("trajectoryGrid") or [[]]
@@ -139,7 +155,7 @@ def legacy_grid(doc):
 
 def uid_grid(doc):
     return [[[t.get("uniqueId") for t in (((ph or {}).get("trajectoryGrid") or [[]])[0] or [])]
-             for ph in track or []] for track in doc.get("phraseGrid") or []]
+             for ph in track or []] for track in tracks(doc)]
 
 
 def raw_stats(doc):
@@ -148,7 +164,7 @@ def raw_stats(doc):
     nulls = collections.Counter()
     nonvocal = []
     instr = doc.get("instrumentation") or []
-    for k, track in enumerate(doc.get("phraseGrid") or []):
+    for k, track in enumerate(tracks(doc)):
         phonetic = 0
         for ph in track or []:
             for t in (((ph or {}).get("trajectoryGrid") or [[]])[0] or []):
@@ -164,7 +180,7 @@ def raw_stats(doc):
             nonvocal.append({"track": k, "instrumentation": label, "phoneticTrajs": phonetic})
     return {"empty": dict(empty), "null": dict(nulls), "nonVocalPhonetic": nonvocal,
             "hasSystem": "system" in doc,
-            "storedSyllablePhrases": sum(1 for tr in doc.get("phraseGrid") or []
+            "storedSyllablePhrases": sum(1 for tr in tracks(doc)
                                          for ph in tr or [] if isinstance(ph, dict)
                                          and ph.get("syllables") is not None)}
 
@@ -263,13 +279,19 @@ def compare_raw(raw, raw_uids, saved, saved_uids):
                     by_uid[u] = r
     changed = collections.Counter()
     unmatched = 0
-    for t_l, t_u in zip(raw, raw_uids):
-        for p_l, p_u in zip(t_l, t_u):
-            for r, u in zip(p_l, p_u):
-                if not u or u not in by_uid:
+    for k, (t_l, t_u) in enumerate(zip(raw, raw_uids)):
+        for pi, (p_l, p_u) in enumerate(zip(t_l, t_u)):
+            # a phrase whose row-0 length is unchanged can be matched by position
+            # (trajectories stored without a uniqueId get a fresh one on load)
+            same = k < len(saved) and pi < len(saved[k]) and len(saved[k][pi]) == len(p_l)
+            for i, (r, u) in enumerate(zip(p_l, p_u)):
+                if u and u in by_uid:
+                    s = by_uid[u]
+                elif same:
+                    s = saved[k][pi][i]
+                else:
                     unmatched += 1
                     continue
-                s = by_uid[u]
                 for f in set(r) | set(s):
                     if r.get(f) != s.get(f):
                         changed[f] += 1

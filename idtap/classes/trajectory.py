@@ -815,7 +815,21 @@ class Trajectory:
         return 2 ** y
 
     # ---------------- consonant/vowel helpers -----------------------
+    def _refuse_if_tiered(self, what: str) -> None:
+        """PROP-8 (PROVISIONAL): on a phrase that carries a syllable tier the
+        legacy phonetic fields are the tier's projection; editing them here
+        would be overwritten on save. Piece marks such trajectories."""
+        phrase_uid = getattr(self, '_tier_phrase', None)
+        if phrase_uid is not None:
+            from ..syllables import TierEditError
+            raise TierEditError(
+                f"{what} on trajectory {self.unique_id}: phrase {phrase_uid} carries a "
+                f"syllable tier, which is the source of truth for vowels and consonants "
+                f"there. Edit that phrase's `syllables` (the syllable anchored at or "
+                f"before this trajectory) instead.")
+
     def remove_consonant(self, start: bool = True) -> None:
+        self._refuse_if_tiered('remove_consonant')
         if start:
             self.start_consonant = None
             self.start_consonant_hindi = None
@@ -834,6 +848,7 @@ class Trajectory:
                 del self.articulations['1.00']
 
     def add_consonant(self, consonant: str, start: bool = True) -> None:
+        self._refuse_if_tiered('add_consonant')
         idx = self.c_isos.index(consonant) if consonant in self.c_isos else -1
         hindi = self.c_hindis[idx] if idx != -1 else None
         ipa = self.c_ipas[idx] if idx != -1 else None
@@ -853,6 +868,7 @@ class Trajectory:
             self.articulations['1.00'] = art
 
     def change_consonant(self, consonant: str, start: bool = True) -> None:
+        self._refuse_if_tiered('change_consonant')
         idx = self.c_isos.index(consonant) if consonant in self.c_isos else -1
         hindi = self.c_hindis[idx] if idx != -1 else None
         ipa = self.c_ipas[idx] if idx != -1 else None
@@ -974,6 +990,7 @@ class Trajectory:
                 self.vowel_eng_trans = getattr(self, 'vowel_eng_trans', None) or self.v_eng_trans[idx]
 
     def update_vowel(self, v_iso: str) -> None:
+        self._refuse_if_tiered('update_vowel')
         if v_iso in self.v_isos:
             idx = self.v_isos.index(v_iso)
             self.vowel = v_iso

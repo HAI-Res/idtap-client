@@ -1661,20 +1661,33 @@ class Piece:
             view["system"] = self.system
         return view
 
+    def _vocal(self, k: int) -> bool:
+        """Syllables live on vocal tracks only (PROP-8, Jon 2026-11-13): the
+        track's instrumentation is 'Vocal (M)' or 'Vocal (F)'; a missing label
+        is not vocal."""
+        return SYL.vocal_track(self._tier_view_instrumentation(), k)
+
+    def _tier_view_instrumentation(self) -> Dict[str, Any]:
+        return {"instrumentation": [i.value if isinstance(i, Instrument) else i
+                                    for i in self.instrumentation]}
+
     def heal_syllables(self) -> None:
-        """PROP-8 heal: give every phrase without a tier the syllables its
-        legacy fields imply (the firstTrajIdxs rule; a track with no phonetic
-        data gets []). Phrases that already have syllables, even [], keep them.
-        Healed lists stay in memory and are written on save only when the
-        piece has a ``system`` (or after ``adopt_healed_syllables``)."""
+        """PROP-8 heal: on every vocal track, give each phrase without a tier
+        the syllables its legacy fields imply (the firstTrajIdxs rule; a track
+        with no phonetic data gets []). Phrases that already have syllables,
+        even [], keep them. Non-vocal tracks get nothing (their stored vowels
+        are the editor's default, not text). Healed lists stay in memory and
+        are written on save only when the piece has a ``system`` (or after
+        ``adopt_healed_syllables``)."""
         view = self._tier_view()
-        for row, vrow in zip(self.phrase_grid, view["phraseGrid"]):
-            if all(ph.syllables is not None for ph in row):
+        for k, (row, vrow) in enumerate(zip(self.phrase_grid, view["phraseGrid"])):
+            if not self._vocal(k) or all(ph.syllables is not None for ph in row):
                 continue
             phonetic = SYL.track_is_phonetic(vrow)
             for ph, vph in zip(row, vrow):
                 if ph.syllables is None:
                     ph._set_healed_syllables(SYL.heal_phrase(vph) if phonetic else [])
+        self._refresh_tier_marks()
 
     def adopt_healed_syllables(self) -> None:
         """Make every healed tier part of the document, so ``to_json`` writes
@@ -1684,11 +1697,28 @@ class Piece:
         for row in self.phrase_grid:
             for ph in row:
                 ph._syllables_healed = False
+        self._refresh_tier_marks()
 
-    def _projects(self, ph: Phrase) -> bool:
-        """Whether the projection owns this phrase's legacy fields: it carries a
-        stored tier, or a healed one that will be written."""
-        return ph.syllables is not None and (not ph._syllables_healed or self.syllable_tier_enabled)
+    def _projecting_phrases(self):
+        """(track, phrase) pairs whose legacy fields the projection owns: on a
+        vocal track, with a stored tier or a healed one that will be written."""
+        for k, row in enumerate(self.phrase_grid):
+            if not self._vocal(k):
+                continue  # a non-vocal track is never projected, even with a stored tier
+            for ph in row:
+                if ph.syllables is not None and (not ph._syllables_healed or self.syllable_tier_enabled):
+                    yield k, ph
+
+    def _refresh_tier_marks(self) -> None:
+        """Mark each row-0 trajectory with the uid of its phrase when the tier
+        owns its legacy fields, so the Trajectory phonetic helpers refuse to
+        edit them (TierEditError)."""
+        owned = {id(ph): ph.unique_id for _, ph in self._projecting_phrases()}
+        for row in self.phrase_grid:
+            for ph in row:
+                mark = owned.get(id(ph))
+                for t in ph.trajectories:
+                    t._tier_phrase = mark
 
     @staticmethod
     def _legacy_snapshot(t: Trajectory) -> tuple:
@@ -1700,42 +1730,41 @@ class Piece:
                 t.end_consonant_ipa, t.end_consonant_eng_trans, repr(arts))
 
     def project_syllables(self) -> None:
-        """PROP-8 projection (dual-write): rewrite the legacy fields of every
-        row-0 trajectory in a tiered phrase from the syllables: ``vowel`` on
-        every spanned trajectory, the start consonant (+ copies + the '0.00'
-        consonant articulation) on the first, the end consonant (+ '1.00') on
-        the last, everything else cleared. Only the hindi-urdu pack writes
-        values; any other pack clears them. Phrases whose tier is only healed
-        and not written keep today's legacy fields. Called by ``to_json``."""
+        """PROP-8 projection (dual-write): on vocal tracks, rewrite the legacy
+        fields of every row-0 trajectory in a tiered phrase from the syllables:
+        ``vowel`` on every spanned trajectory, the start consonant (+ copies +
+        the '0.00' consonant articulation) on the first, the end consonant (+
+        '1.00') on the last, everything else cleared. Only the hindi-urdu pack
+        writes values; any other pack clears them. Phrases whose tier is only
+        healed and not written, and every non-vocal track, keep their legacy
+        fields as they are. Called by ``to_json``.
+
+        Raises TierEditError, before changing anything, when a legacy field of
+        a tiered trajectory was edited directly since the last projection
+        (PROVISIONAL): the edit would otherwise be overwritten silently."""
         self.heal_syllables()
-        if not any(self._projects(ph) for row in self.phrase_grid for ph in row):
+        targets = list(self._projecting_phrases())
+        if not targets:
             return
         pack = self._pack_or_none()
         if pack is None:
             return
+        for _, ph in targets:
+            for t in ph.trajectories:
+                last = self._projected.get(t.unique_id)
+                if last is not None and self._legacy_snapshot(t) != last:
+                    raise SYL.TierEditError(
+                        f"trajectory {t.unique_id} in phrase {ph.unique_id} had its vowel or "
+                        f"consonant fields edited directly, but that phrase carries a syllable "
+                        f"tier, which is the source of truth for them: the save would overwrite "
+                        f"the edit. Edit phrase.syllables (the syllable anchored at or before "
+                        f"this trajectory) instead. Nothing was written.")
         proj = SYL.project_piece(self._tier_view())
-        edited = []
-        for row in self.phrase_grid:
-            for ph in row:
-                if not self._projects(ph):
-                    continue
-                for t in ph.trajectories:
-                    before = self._legacy_snapshot(t)
-                    # changed since the last projection wrote it = a direct edit
-                    touched = (t.unique_id in self._projected
-                               and before != self._projected[t.unique_id])
-                    self._apply_projection_to_traj(t, proj[t.unique_id], pack)
-                    after = self._legacy_snapshot(t)
-                    if touched and after != before:
-                        edited.append(t.unique_id)
-                    self._projected[t.unique_id] = after
-        if edited:
-            warnings.warn(
-                f"{len(edited)} trajectory(ies) in phrases that carry a syllable tier "
-                f"had legacy phonetic fields (vowel / consonants) edited directly; the "
-                f"tier is the source of truth, so those edits were overwritten by the "
-                f"projection. Edit phrase.syllables instead (first: {edited[0]}).",
-                UserWarning, stacklevel=3)
+        for _, ph in targets:
+            for t in ph.trajectories:
+                self._apply_projection_to_traj(t, proj[t.unique_id], pack)
+                self._projected[t.unique_id] = self._legacy_snapshot(t)
+        self._refresh_tier_marks()
 
     @staticmethod
     def _apply_projection_to_traj(t: Trajectory, p: Dict[str, Any], pack: Dict[str, Any]) -> None:
@@ -1800,6 +1829,8 @@ class Piece:
         for row, orow in zip(self.phrase_grid, out["phraseGrid"]):
             for ph, oph in zip(row, orow):
                 syls = oph["syllables"]
+                if not syls and ph.syllables is None:
+                    continue  # no tier before, none now (e.g. a non-vocal track): stay absent
                 # a phrase holding any stored syllable carries a stored tier;
                 # an emptied phrase keeps whether its (now empty) tier was stored
                 healed = all(id(x) in healed_ids for x in syls) if syls else ph._syllables_healed
@@ -1807,6 +1838,7 @@ class Piece:
                     ph._set_healed_syllables(copy.deepcopy(syls))
                 else:
                     ph.syllables = copy.deepcopy(syls)
+        self._refresh_tier_marks()
         return dropped
 
     def syllable_violations(self) -> List[tuple]:
@@ -1859,7 +1891,7 @@ class Piece:
         them (no syllable covers it, or the syllable it falls in differs)."""
         if traj.id == 12 or not SYL.has_phonetics(self._traj_view(traj)):
             return
-        if not any(self._projects(ph) for ph in self.phrase_grid[track]):
+        if not any(k == track for k, _ in self._projecting_phrases()):
             return
         pack = self._pack_or_none()
         if pack is None:

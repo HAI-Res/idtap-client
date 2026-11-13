@@ -154,14 +154,67 @@ def test_projection_updates_the_in_memory_trajectories():
     assert "0.00" not in t3.articulations and "1.00" not in t3.articulations
 
 
-def test_editing_legacy_fields_of_a_tiered_phrase_warns():
+def test_legacy_helpers_refuse_on_a_tiered_phrase():
+    """PROVISIONAL (contract-syllables, 2026-11-13): raise, naming the phrase."""
     doc = legacy_doc()
     doc["phraseGrid"][0][0]["syllables"] = [copy.deepcopy(SYL_A1)]
     p = load(doc)
+    t = p.phrase_grid[0][0].trajectories[1]
+    for call in (lambda: t.update_vowel("ō"), lambda: t.add_consonant("ka"),
+                 lambda: t.change_consonant("ka"), lambda: t.remove_consonant(False)):
+        with pytest.raises(SYL.TierEditError, match="phrase ph0"):
+            call()
+    assert t.vowel == "ā"
+
+
+def test_direct_legacy_edit_on_a_tiered_phrase_fails_the_save_before_writing():
+    doc = legacy_doc()
+    doc["phraseGrid"][0][0]["syllables"] = [copy.deepcopy(SYL_A1)]
+    p = load(doc)
+    t = p.phrase_grid[0][0].trajectories[1]
+    t.vowel = "ō"
+    with pytest.raises(SYL.TierEditError, match="phrase ph0"):
+        p.to_json()
+    assert t.vowel == "ō"  # local state untouched
+
+
+def test_legacy_helpers_work_as_today_on_untiered_phrases_and_instrumental_tracks():
+    p = load(legacy_doc())  # flag off: healed tier not written, phrase not owned
     p.phrase_grid[0][0].trajectories[1].update_vowel("ō")
-    with pytest.warns(UserWarning, match="edit phrase.syllables instead|Edit phrase.syllables"):
-        out = p.to_json()
-    assert out["phraseGrid"][0][0]["trajectoryGrid"][0][1]["vowel"] == "ā"
+    assert save(p)["phraseGrid"][0][0]["trajectoryGrid"][0][1]["vowel"] == "ō"
+    doc = legacy_doc()
+    doc["instrumentation"] = ["Sitar"]
+    doc["phraseGrid"][0][0]["syllables"] = [copy.deepcopy(SYL_A1)]
+    p = load(doc)
+    p.phrase_grid[0][0].trajectories[1].update_vowel("ō")
+    assert save(p)["phraseGrid"][0][0]["trajectoryGrid"][0][1]["vowel"] == "ō"
+
+
+# --------------------------------------------------------------------------- vocal only
+@pytest.mark.parametrize("label", [["Sitar"], [""]], ids=["sitar", "empty-label"])
+def test_non_vocal_track_gets_no_tier_and_keeps_its_fields(label):
+    doc = legacy_doc()
+    doc["instrumentation"] = label
+    p = load(piece(doc["phraseGrid"][0], instrumentation=label, system={"phonology": "hindi-urdu"}))
+    assert p.phrase_grid[0][0].syllables is None
+    p.adopt_healed_syllables()
+    p.rehome_syllables()
+    out = save(p)
+    assert "syllables" not in out["phraseGrid"][0][0]
+    assert SYL.stored_legacy(out) == SYL.stored_legacy(save(load(doc)))
+
+
+def test_stored_tier_on_a_non_vocal_track_is_kept_warned_and_not_projected():
+    doc = legacy_doc()
+    doc["instrumentation"] = ["Sitar"]
+    doc["phraseGrid"][0][0]["syllables"] = [
+        {"anchor": {"traj": "a1", "t": 0}, "onset": "ma", "nucleus": "ī", "lyric": {"vowel": "ī", "source": "human"}}]
+    with pytest.warns(UserWarning, match="track-not-vocal"):
+        p = Piece.from_json(copy.deepcopy(doc))
+    out = save(p)
+    assert out["phraseGrid"][0][0]["syllables"] == doc["phraseGrid"][0][0]["syllables"]
+    assert out["phraseGrid"][0][0]["trajectoryGrid"][0][0]["vowel"] == "ā"  # not projected
+    assert SYL.legacy_safe(doc) == (False, ["boundary"])
 
 
 def test_editing_a_syllable_changes_the_saved_legacy_fields():

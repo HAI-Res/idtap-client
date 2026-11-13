@@ -51,6 +51,14 @@ class UnknownPackError(ValueError):
     """``system.phonology`` names a pack this version of idtap does not bundle."""
 
 
+class TierEditError(ValueError):
+    """A legacy phonetic field (vowel / consonant) was edited directly on a
+    trajectory whose phrase carries a syllable tier. There the tier is the
+    source of truth and the legacy fields are its projection, so the edit would
+    be overwritten on save. Edit ``phrase.syllables`` instead. PROVISIONAL
+    (idtap 0.1.59): the shared editing behaviour may change with the syllable UI."""
+
+
 def available_packs() -> List[str]:
     """Ids of the bundled phoneme packs."""
     return sorted(f[:-5] for f in os.listdir(PACKS_DIR) if f.endswith(".json"))
@@ -168,12 +176,24 @@ def track_is_phonetic(track: List[Dict[str, Any]]) -> bool:
     return any(has_phonetics(t) for _, _, t in track_flat(track))
 
 
+def vocal_track(piece: Dict[str, Any], k: int) -> bool:
+    """Syllables live on vocal tracks only (Jon, 2026-11-13). A track is vocal
+    when instrumentation[k] is a vocal label; a missing label is not vocal."""
+    instr = piece.get("instrumentation") or []
+    return k < len(instr) and instr[k] in VOCAL_INSTRUMENTS
+
+
 def heal_piece(piece: Dict[str, Any]) -> Dict[str, Any]:
     """Normative heal. A phrase that already has `syllables` keeps them (even []).
-    A phrase without the key is healed from its legacy fields; if its track has
+    On a non-vocal track nothing is created: phrases without the key stay
+    without it and their legacy fields are left exactly as stored (the editor's
+    default 'a' on instrumental trajectories is not text). On a vocal track a
+    phrase without the key is healed from its legacy fields; if the track has
     no phonetic data on any row-0 trajectory, it gets []. Returns a copy."""
     pc = copy.deepcopy(piece)
-    for track in pc["phraseGrid"]:
+    for k, track in enumerate(pc["phraseGrid"]):
+        if not vocal_track(pc, k):
+            continue
         phonetic = track_is_phonetic(track)
         for ph in track:
             if "syllables" not in ph:
@@ -245,7 +265,12 @@ def project_piece(piece: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     are the 'consonant' articulations at '0.00' / '1.00' (None = none)."""
     pack = pack_of(piece)
     res: Dict[str, Dict[str, Any]] = {}
-    for track in piece["phraseGrid"]:
+    for k, track in enumerate(piece["phraseGrid"]):
+        if not vocal_track(piece, k):
+            # non-vocal tracks are never projected: the stored fields stand
+            for _, _, t in track_flat(track):
+                res[uid_of(t)] = legacy_of_traj(t)
+            continue
         sp, _uncovered = spans(track)
         for _, _, t in track_flat(track):
             res[uid_of(t)] = {"art0": None, "art1": None}
@@ -286,7 +311,9 @@ def apply_projection(piece: Dict[str, Any]) -> Dict[str, Any]:
     """Write the projection onto a copy of the serialized piece (dual-write)."""
     pc = copy.deepcopy(piece)
     proj = project_piece(pc)
-    for track in pc["phraseGrid"]:
+    for k, track in enumerate(pc["phraseGrid"]):
+        if not vocal_track(pc, k):
+            continue  # left exactly as stored
         for _, _, t in track_flat(track):
             p = proj[uid_of(t)]
             for k in WIRE_FIELDS:
@@ -511,7 +538,10 @@ def legacy_safe(piece: Dict[str, Any]) -> Tuple[bool, List[str]]:
                 # a pre-0.3.0 save keeps its legacy fields and drops nothing.
                 if pa.get("syllables") is None:
                     continue
-                if _comparable(pa["syllables"]) != _comparable(pb["syllables"]):
+                # a stored tier on a non-vocal track is not rebuilt by the heal,
+                # so an old client's save would lose it
+                if pb.get("syllables") is None or \
+                        _comparable(pa["syllables"]) != _comparable(pb["syllables"]):
                     reasons.add("boundary")
     return (not reasons, sorted(reasons))
 
