@@ -97,6 +97,11 @@ class Phrase:
         # of the stored document yet (PROP-8 "tier disabled: preserve, never
         # create"): it is written on save only when the piece has a `system`.
         self._syllables_healed = False
+        # PROP-8 `syllable-malformed`: a stored value that is not a valid tier
+        # (not a list, or an entry without anchor.traj). Carried through
+        # verbatim, never healed or projected; see `malformed_syllables`.
+        self._syllables_malformed = False
+        self._malformed_raw: Any = None
         self._extra: Dict[str, Any] = {}
         trajectories_in = opts.get('trajectories', [])
         self.start_time: Optional[float] = opts.get('start_time')
@@ -594,7 +599,9 @@ class Phrase:
             'adHocCategorizationGrid': self.ad_hoc_categorization_grid,
             'isSectionStart': self.is_section_start,
         }
-        if self.syllables is not None and (include_healed_syllables or not self._syllables_healed):
+        if self._syllables_malformed:
+            out['syllables'] = copy.deepcopy(self._malformed_raw)  # verbatim
+        elif self.syllables is not None and (include_healed_syllables or not self._syllables_healed):
             out['syllables'] = [copy.deepcopy(s) for s in self.syllables]
         return merge_extra_keys(out, self._extra)
 
@@ -609,6 +616,19 @@ class Phrase:
     def syllables(self, value: Optional[List[Dict[str, Any]]]) -> None:
         self._syllables = list(value) if value is not None else None
         self._syllables_healed = False
+        self._syllables_malformed, self._malformed_raw = False, None  # a repair
+        ref = getattr(self, '_piece_ref', None)
+        piece = ref() if ref is not None else None
+        if piece is not None:
+            piece._refresh_tier_marks()
+
+    @property
+    def malformed_syllables(self) -> Any:
+        """The stored `syllables` value when it is malformed (reported as
+        `syllable-malformed`, saved back unchanged), else None. While it is
+        set, `syllables` is None and the phrase is neither healed nor
+        projected; assigning `syllables` replaces it."""
+        return copy.deepcopy(self._malformed_raw) if self._syllables_malformed else None
 
     def _set_healed_syllables(self, value: List[Dict[str, Any]]) -> None:
         """Set a tier computed by the heal (kept in memory, not yet stored)."""
@@ -680,10 +700,15 @@ class Phrase:
                 new_grid.append(new_obj)
             opts['chikari_grid'] = new_grid
         # (raga already parsed above and threaded as context)
-        if syllables_raw is not None:
+        from ..syllables import syllables_malformed
+        malformed = syllables_malformed(syllables_raw)
+        if syllables_raw is not None and not malformed:
             opts['syllables'] = copy.deepcopy(syllables_raw)
         phrase = Phrase(opts)
         phrase._extra = extra
+        if malformed:  # report, never raise on load (PROP-8 syllable-malformed)
+            phrase._syllables_malformed = True
+            phrase._malformed_raw = copy.deepcopy(syllables_raw)
         return phrase
 
     def to_note_view_phrase(self) -> 'NoteViewPhrase':

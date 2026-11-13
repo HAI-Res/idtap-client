@@ -172,6 +172,25 @@ def heal_phrase(ph: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def syllable_entry_malformed(x: Any) -> bool:
+    """An entry that is not an object with a non-empty string anchor.traj (and,
+    if present, an object lyric): `syllable-malformed`."""
+    if not isinstance(x, dict):
+        return True
+    a = x.get("anchor")
+    if not isinstance(a, dict) or not isinstance(a.get("traj"), str) or not a["traj"]:
+        return True
+    return "lyric" in x and not isinstance(x["lyric"], dict)
+
+
+def syllables_malformed(raw: Any) -> bool:
+    """A stored `syllables` value that clients must carry through verbatim
+    and not project: not an array, or any malformed entry. None = absent."""
+    if raw is None:
+        return False
+    return not isinstance(raw, list) or any(syllable_entry_malformed(x) for x in raw)
+
+
 def track_is_phonetic(track: List[Dict[str, Any]]) -> bool:
     return any(has_phonetics(t) for _, _, t in track_flat(track))
 
@@ -409,9 +428,17 @@ def check_invariants(piece: Dict[str, Any]) -> List[Tuple[str, str]]:
                 else:
                     v.append(("traj-uid-missing", f"track {k} phrase {pi} traj {i}"))
             last = -1
+            raw = ph.get("syllables")
+            if raw is not None and not isinstance(raw, list):
+                v.append(("syllable-malformed", f"track {k} phrase {pi} syllables"))
+                continue
             for si, s in enumerate(ph.get("syllables") or []):
                 where = f"track {k} phrase {pi} syllable {si}"
-                a = s["anchor"]
+                a = s.get("anchor") if isinstance(s, dict) else None
+                if (not isinstance(a, dict) or not isinstance(a.get("traj"), str) or not a["traj"]
+                        or ("lyric" in s and not isinstance(s["lyric"], dict))):
+                    v.append(("syllable-malformed", where))
+                    continue
                 if a["traj"] not in idx:
                     v.append(("anchor-missing", where))
                     continue
@@ -514,6 +541,11 @@ def legacy_safe(piece: Dict[str, Any]) -> Tuple[bool, List[str]]:
         reasons.add("pack")
     for track in piece["phraseGrid"]:
         for ph in track:
+            if syllables_malformed(ph.get("syllables")):
+                # PROP-8 syllable-malformed: an old client's save would drop
+                # entries nobody can rebuild (reason `unreadable`)
+                reasons.add("unreadable")
+                continue
             for s in ph.get("syllables") or []:
                 for f in s:
                     if f not in LEGACY_HOLDABLE:
@@ -536,7 +568,7 @@ def legacy_safe(piece: Dict[str, Any]) -> Tuple[bool, List[str]]:
             for pa, pb in zip(ta, tb):
                 # A phrase with no stored tier (absent or null) is not compared:
                 # a pre-0.3.0 save keeps its legacy fields and drops nothing.
-                if pa.get("syllables") is None:
+                if pa.get("syllables") is None or syllables_malformed(pa.get("syllables")):
                     continue
                 # a stored tier on a non-vocal track is not rebuilt by the heal,
                 # so an old client's save would lose it

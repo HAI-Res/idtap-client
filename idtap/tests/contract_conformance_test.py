@@ -403,12 +403,25 @@ def test_syllable_conformance(path):
         assert [SYL.derive_ipa(s, pack) for s in _all_syllables(piece)] == exp["derivedIpa"]
         if "nineTone" in exp:
             assert [SYL.derived_tone(s, pack) for s in _all_syllables(piece)] == exp["nineTone"]
+        if "appliedArticulations" in exp:
+            # the whole articulations object after the projection: a consonant
+            # mirror replaces a pluck/dampen at '0.00'/'1.00'
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                saved = piece.to_json()
+            got = {t["uniqueId"]: t.get("articulations")
+                   for tr in saved["phraseGrid"] for ph in tr for t in ph["trajectoryGrid"][0]}
+            # only the keys the tier writes are listed (uid -> key -> expected)
+            for uid, keys in exp["appliedArticulations"].items():
+                for key, want in keys.items():
+                    have = (got.get(uid) or {}).get(key)
+                    assert have == want, f"{uid}[{key}]: {have} != {want}"
         # syllables, system and lyricsText round-trip byte-identical
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             out = piece.to_json()
         assert SYL.syllable_grid(out) == SYL.syllable_grid(pj)
-        assert out["system"] == pj["system"] and out.get("lyricsText") == pj.get("lyricsText")
+        assert out.get("system") == pj.get("system") and out.get("lyricsText") == pj.get("lyricsText")
         loaded = pj
     elif kind == "rehome":
         before = _load_piece(pj)

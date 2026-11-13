@@ -17,6 +17,7 @@ from .. import syllables as SYL
 from ..utils import split_unknown_keys, merge_extra_keys
 import copy
 import math
+import weakref
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -286,7 +287,7 @@ class Piece:
         # ids and components are kept verbatim. Its presence is the syllable
         # tier's feature flag (see `syllable_tier_enabled`).
         system = opts.get("system")
-        self.system: Optional[Dict[str, Any]] = copy.deepcopy(system) if system is not None else None
+        self._system: Optional[Dict[str, Any]] = copy.deepcopy(system) if system is not None else None
         # PROP-7: the source text per track as given (string or None per
         # track), for reference only and never parsed.
         lyrics = opts.get("lyricsText")
@@ -611,7 +612,8 @@ class Piece:
                 arr.append(p.dur_tot / self.dur_tot)
             self.dur_array_grid.append(arr)
         self.update_start_times()
-        if removed_trajs and hasattr(self, '_projected'):
+        if removed_trajs and hasattr(self, '_projected') and any(
+                self._track_has_stored_tier(k) for k in range(len(self.phrase_grid))):
             self.rehome_syllables()  # PROP-8: a deleted trajectory drops its syllable
 
     # ------------------------------------------------------------------
@@ -714,9 +716,12 @@ class Piece:
         
         # Update piece state
         phrase.reset()
-        # PROP-8: re-home after every trajectory edit
-        self.rehome_syllables()
-        self._warn_if_uncovered(inst_track, trajectory)
+        # PROP-8: re-home after every trajectory edit. Only a vocal track with
+        # a stored tier needs it: a healed tier is re-derived anyway, and
+        # re-homing copies the piece, which made add_trajectory 5-10x slower.
+        if self._track_has_stored_tier(inst_track):
+            self.rehome_syllables()
+            self._warn_if_uncovered(inst_track, trajectory)
         return True
 
     def _validate_trajectory_addition_inputs(
@@ -1603,6 +1608,18 @@ class Piece:
     # (idtap-contract 0.3.0; rules in idtap.syllables)
     # ------------------------------------------------------------------
     @property
+    def system(self) -> Optional[Dict[str, Any]]:
+        """PROP-7 transcription system (None = Hindustani). Setting it turns
+        the syllable tier on (see ``syllable_tier_enabled``)."""
+        return self._system
+
+    @system.setter
+    def system(self, value: Optional[Dict[str, Any]]) -> None:
+        self._system = copy.deepcopy(value) if value is not None else None
+        if hasattr(self, '_projected'):
+            self.heal_syllables()  # re-derives healed tiers and refreshes the marks
+
+    @property
     def syllable_tier_enabled(self) -> bool:
         """The syllable tier's feature flag: the piece has a ``system``.
 
@@ -1640,16 +1657,26 @@ class Piece:
                 d[key] = v
         return d
 
-    def _tier_view(self) -> Dict[str, Any]:
+    def _tier_view(self, check: bool = False) -> Dict[str, Any]:
         """The piece as idtap.syllables sees it: system, instrumentation and,
         per phrase, row-0 trajectories (id, uniqueId, vowel, consonants) and
-        the in-memory syllables (healed or stored)."""
+        the in-memory syllables (healed or stored).
+
+        A phrase with malformed syllables shows them raw when ``check`` (for
+        the invariants); otherwise it has no tier and, for the projection, its
+        trajectories stand in as silences so no neighbouring span reaches in."""
         grid = []
         for row in self.phrase_grid:
             out_row = []
             for ph in row:
-                d: Dict[str, Any] = {"trajectoryGrid": [[self._traj_view(t) for t in ph.trajectories]]}
-                if ph.syllables is not None:
+                trajs = [self._traj_view(t) for t in ph.trajectories]
+                if ph._syllables_malformed and not check:
+                    trajs = [dict(t, id=12) for t in trajs]
+                d: Dict[str, Any] = {"trajectoryGrid": [trajs]}
+                if ph._syllables_malformed:
+                    if check:
+                        d["syllables"] = ph._malformed_raw
+                elif ph.syllables is not None:
                     d["syllables"] = ph.syllables
                 out_row.append(d)
             grid.append(out_row)
@@ -1671,6 +1698,9 @@ class Piece:
         return {"instrumentation": [i.value if isinstance(i, Instrument) else i
                                     for i in self.instrumentation]}
 
+    def _track_has_stored_tier(self, k: int) -> bool:
+        return self._vocal(k) and any(ph.has_stored_syllables for ph in self.phrase_grid[k])
+
     def heal_syllables(self) -> None:
         """PROP-8 heal: on every vocal track, give each phrase without a tier
         the syllables its legacy fields imply (the firstTrajIdxs rule; a track
@@ -1679,13 +1709,19 @@ class Piece:
         are the editor's default, not text). Healed lists stay in memory and
         are written on save only when the piece has a ``system`` (or after
         ``adopt_healed_syllables``)."""
+        # A healed tier that is not part of the document yet is derived data:
+        # it is rebuilt from the CURRENT legacy fields every time, so an edit
+        # made through them while the tier was not written (flag off) is what
+        # a later adopt / system change / save projects, not the load-time heal.
         view = self._tier_view()
         for k, (row, vrow) in enumerate(zip(self.phrase_grid, view["phraseGrid"])):
-            if not self._vocal(k) or all(ph.syllables is not None for ph in row):
+            if not self._vocal(k) or all(ph.has_stored_syllables for ph in row):
                 continue
             phonetic = SYL.track_is_phonetic(vrow)
             for ph, vph in zip(row, vrow):
-                if ph.syllables is None:
+                if ph._syllables_malformed:
+                    continue  # carried through, never healed
+                if ph.syllables is None or ph._syllables_healed:
                     ph._set_healed_syllables(SYL.heal_phrase(vph) if phonetic else [])
         self._refresh_tier_marks()
 
@@ -1706,6 +1742,8 @@ class Piece:
             if not self._vocal(k):
                 continue  # a non-vocal track is never projected, even with a stored tier
             for ph in row:
+                if ph._syllables_malformed:
+                    continue  # never projected (syllable-malformed)
                 if ph.syllables is not None and (not ph._syllables_healed or self.syllable_tier_enabled):
                     yield k, ph
 
@@ -1714,8 +1752,10 @@ class Piece:
         owns its legacy fields, so the Trajectory phonetic helpers refuse to
         edit them (TierEditError)."""
         owned = {id(ph): ph.unique_id for _, ph in self._projecting_phrases()}
+        ref = weakref.ref(self)
         for row in self.phrase_grid:
             for ph in row:
+                ph._piece_ref = ref  # lets the phrase.syllables setter refresh these marks
                 mark = owned.get(id(ph))
                 for t in ph.trajectories:
                     t._tier_phrase = mark
@@ -1783,19 +1823,22 @@ class Piece:
             setattr(t, attr + "_ipa", p.get(pre + "Ipa"))
             setattr(t, attr + "_eng_trans", p.get(pre + "EngTrans"))
         # The '0.00' / '1.00' consonant articulations are owned by the
-        # projection; a non-consonant articulation there is left alone. Keys
-        # keep their position so the serialized order matches today's.
+        # projection. Where it writes a consonant, the mirror REPLACES whatever
+        # articulation is there (a pluck, a dampen), as the reference
+        # apply_projection and the TS constructor do (fixture
+        # project-articulation-overwrite); a stale consonant is removed; a
+        # non-consonant articulation where no consonant goes is kept. Keys keep
+        # their position so the serialized order matches today's.
         new_arts: Dict[str, Articulation] = {}
         placed = set()
         for k, a in t.articulations.items():
             slot = {"0.00": "art0", "1.00": "art1"}.get(k)
-            if slot is not None and a is not None and a.name == "consonant":
-                if p[slot]:
-                    new_arts[k] = Articulation(dict(p[slot]))
-                    placed.add(slot)
+            if slot is not None and p[slot]:
+                new_arts[k] = Articulation(dict(p[slot]))
+                placed.add(slot)
                 continue
-            if slot is not None and p[slot] and a is not None:
-                placed.add(slot)  # occupied by a non-consonant articulation
+            if slot is not None and a is not None and a.name == "consonant":
+                continue
             new_arts[k] = a
         for k, slot in (("0.00", "art0"), ("1.00", "art1")):
             if p[slot] and slot not in placed:
@@ -1828,6 +1871,8 @@ class Piece:
         out, dropped = SYL.rehome(before_view, self._tier_view())
         for row, orow in zip(self.phrase_grid, out["phraseGrid"]):
             for ph, oph in zip(row, orow):
+                if ph._syllables_malformed:
+                    continue  # carried through unchanged
                 syls = oph["syllables"]
                 if not syls and ph.syllables is None:
                     continue  # no tier before, none now (e.g. a non-vocal track): stay absent
@@ -1837,7 +1882,7 @@ class Piece:
                 if healed:
                     ph._set_healed_syllables(copy.deepcopy(syls))
                 else:
-                    ph.syllables = copy.deepcopy(syls)
+                    ph._syllables, ph._syllables_healed = copy.deepcopy(syls), False
         self._refresh_tier_marks()
         return dropped
 
@@ -1849,7 +1894,7 @@ class Piece:
         pack = self._pack_or_none()
         if pack is None:
             return sorted(self._load_uid_violations)
-        found = SYL.check_invariants(self._tier_view())
+        found = SYL.check_invariants(self._tier_view(check=True))
         return sorted(found + list(self._load_uid_violations))
 
     @staticmethod
@@ -1871,7 +1916,8 @@ class Piece:
         exists only as an in-memory heal stays quiet (its violations, e.g. a
         legacy vowel that is not a pack key, are in syllable_violations())."""
         tiered = self.system is not None or any(
-            ph.has_stored_syllables for row in self.phrase_grid for ph in row)
+            ph.has_stored_syllables or ph._syllables_malformed
+            for row in self.phrase_grid for ph in row)
         if not tiered:
             return
         errors, warns = SYL.split_violations(self.syllable_violations())

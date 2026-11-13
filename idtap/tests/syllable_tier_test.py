@@ -123,6 +123,54 @@ def test_assigning_syllables_makes_them_part_of_the_document():
     assert save(p)["phraseGrid"][0][0]["syllables"] == [SYL_A1]
 
 
+def _edit_a1(p):
+    t = p.phrase_grid[0][0].trajectories[0]
+    t.update_vowel("i")
+    t.change_consonant("ga")
+
+
+@pytest.mark.parametrize("enable", ["adopt", "system"])
+def test_legacy_edit_before_the_tier_is_written_survives_enabling_it(enable):
+    """Review of #36: the healed tier is derived; adopting it (or setting
+    `system`) must project the CURRENT legacy fields, not the load-time heal."""
+    p = load(legacy_doc())
+    _edit_a1(p)
+    if enable == "adopt":
+        p.adopt_healed_syllables()
+    else:
+        p.system = {"phonology": "hindi-urdu"}
+    out = save(p)
+    t = out["phraseGrid"][0][0]["trajectoryGrid"][0][0]
+    assert (t["vowel"], t["startConsonant"], t["articulations"]["0.00"]["stroke"]) == ("i", "ga", "ga")
+    s = out["phraseGrid"][0][0]["syllables"][0]
+    assert (s["onset"], s["nucleus"]) == ("ga", "i")
+
+
+def test_trajectory_added_with_the_flag_off_survives_adopt():
+    doc = piece([phrase("ph0", [traj("a1", vowel="ā"), traj("s1", tid=12)])])
+    p = load(doc)
+    new = Trajectory({"id": 0, "pitches": [], "dur_tot": 0.5, "vowel": "ī", "start_consonant": "ma"})
+    assert p.add_trajectory(new, 0, 0.5)
+    p.adopt_healed_syllables()
+    out = save(p)
+    trajs = out["phraseGrid"][0][0]["trajectoryGrid"][0]
+    assert [(t.get("vowel"), t.get("startConsonant")) for t in trajs] == [("ā", None), ("ī", "ma")]
+
+
+def test_setting_system_or_syllables_refreshes_the_edit_guard():
+    p = load(legacy_doc())
+    t = p.phrase_grid[0][0].trajectories[1]
+    t.update_vowel("ā")  # untiered: allowed
+    p.system = {"phonology": "hindi-urdu"}
+    with pytest.raises(SYL.TierEditError):
+        t.update_vowel("ō")
+    p.system = None
+    t.update_vowel("ā")  # healed tier not written again: allowed
+    p.phrase_grid[0][0].syllables = [copy.deepcopy(SYL_A1)]
+    with pytest.raises(SYL.TierEditError):
+        t.update_vowel("ō")
+
+
 def test_adopt_writes_and_projects_the_healed_tier():
     p = load(legacy_doc())
     p.adopt_healed_syllables()
@@ -348,3 +396,50 @@ def test_dry_run_harness_passes_legacy_and_catches_a_display_copy_diff(tmp_path)
     rep = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))
     assert rep["gate"]["diffPieces"] == 1
     assert {d["field"] for d in rep["gate"]["examples"][0]["diffs"]} == {"art0", "startConsonantHindi"}
+
+
+# --------------------------------------------------------------------------- syllable-malformed
+@pytest.mark.parametrize("bad", [
+    {"not": "a list"},
+    [{"onset": "ba"}],                                       # no anchor
+    [{"anchor": {"traj": ""}, "nucleus": "ā"}],               # empty anchor.traj
+    [{"anchor": {"traj": "a1", "t": 0}, "lyric": "ā"}],       # lyric not an object
+], ids=["not-array", "no-anchor", "empty-traj", "lyric-string"])
+def test_malformed_syllables_are_reported_carried_through_and_not_projected(bad):
+    doc = legacy_doc()
+    doc["system"] = {"phonology": "hindi-urdu"}  # flag on: still never healed over
+    doc["phraseGrid"][0][0]["syllables"] = copy.deepcopy(bad)
+    with pytest.warns(UserWarning, match="syllable-malformed"):
+        p = Piece.from_json(copy.deepcopy(doc))
+    assert "syllable-malformed" in SYL.split_violations(p.syllable_violations())[0]
+    assert p.phrase_grid[0][0].syllables is None
+    assert p.phrase_grid[0][0].malformed_syllables == bad
+    out = save(p)
+    assert json.dumps(out["phraseGrid"][0][0]["syllables"], ensure_ascii=False) == \
+        json.dumps(bad, ensure_ascii=False)
+    # not projected: legacy fields as today's client saves them
+    assert SYL.stored_legacy(out) == SYL.stored_legacy(save(load(legacy_doc())))
+    assert SYL.legacy_safe(doc) == (False, ["unreadable"])
+
+
+def test_neighbouring_span_does_not_reach_into_a_malformed_phrase():
+    doc = piece([
+        phrase("ph0", [traj("a1", vowel="ā", startConsonant="ba")], syllables=[
+            {"anchor": {"traj": "a1", "t": 0}, "onset": "ba", "nucleus": "ā", "coda": "ma",
+             "lyric": {"vowel": "ā", "source": "human"}}]),
+        phrase("ph1", [traj("b1", vowel="u")], start=0.5, syllables="garbage")])
+    out = save(load(doc))
+    t_a1 = out["phraseGrid"][0][0]["trajectoryGrid"][0][0]
+    t_b1 = out["phraseGrid"][0][1]["trajectoryGrid"][0][0]
+    assert t_a1["endConsonant"] == "ma"          # coda on the syllable's own last traj
+    assert t_b1["vowel"] == "u" and "endConsonant" not in t_b1
+    assert out["phraseGrid"][0][1]["syllables"] == "garbage"
+
+
+def test_assigning_syllables_repairs_a_malformed_phrase():
+    doc = legacy_doc()
+    doc["phraseGrid"][0][0]["syllables"] = [{"onset": "ba"}]
+    p = load(doc)
+    p.phrase_grid[0][0].syllables = [copy.deepcopy(SYL_A1)]
+    assert p.phrase_grid[0][0].malformed_syllables is None
+    assert save(p)["phraseGrid"][0][0]["syllables"] == [SYL_A1]
