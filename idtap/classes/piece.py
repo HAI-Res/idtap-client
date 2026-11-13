@@ -1812,7 +1812,7 @@ class Piece:
         t.vowel = vowel
         ve = None
         if vowel is not None and pack["id"] == SYL.LEGACY_PACK:
-            ve = (pack["vowels"].get(vowel) or {}).get("legacy")
+            ve = (SYL.lookup(pack["vowels"], vowel) or {}).get("legacy")
         # in-memory display copies of the vowel (not on the wire)
         t.vowel_hindi = ve.get("hindi") if ve else None
         t.vowel_ipa = ve.get("ipa") if ve else None

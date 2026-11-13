@@ -1,9 +1,9 @@
 {
   "id": "kurmanji",
   "name": "Kurmanji Kurdish",
-  "packVersion": "0.1.0",
+  "packVersion": "0.2.0",
   "status": "draft: pending review by Seba Kayan",
-  "keyScheme": "Kurmanji Latin (Hawar) letters. Thackston's underlined letters, which the spelling does not distinguish, are written with U+0331 COMBINING MACRON BELOW (p̱ ṯ ḵ ç̱ x̱); pharyngeal h is ḥ; the trill is rr; 'ayn is ʿ.",
+  "keyScheme": "Kurmanji Latin (Hawar) letters. Thackston's underlined letters, which the spelling does not distinguish, are written with U+0331 COMBINING MACRON BELOW (p̱ ç̱ x̱), or the precomposed letter where Unicode has one (ṯ U+1E6F, ḵ U+1E35); keys are NFC; pharyngeal h is ḥ; the trill is rr; 'ayn is ʿ.",
   "scripts": [
     "Latn"
   ],
@@ -41,6 +41,14 @@
       "aspirated": false,
       "display": {
         "Latn": "b"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "b in bat",
+        "example": {
+          "text": "bav",
+          "gloss": "father"
+        }
       }
     },
     "c": {
@@ -51,6 +59,14 @@
       "aspirated": false,
       "display": {
         "Latn": "c"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "j in jam",
+        "example": {
+          "text": "cih",
+          "gloss": "place"
+        }
       }
     },
     "ç": {
@@ -61,6 +77,14 @@
       "aspirated": true,
       "display": {
         "Latn": "ç"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ch in church",
+        "example": {
+          "text": "çav",
+          "gloss": "eye"
+        }
       }
     },
     "ç̱": {
@@ -73,7 +97,11 @@
         "Latn": "ç̱"
       },
       "pharyngealized": true,
-      "note": "Thackston's underlined ç: unaspirated, pharyngealized; not maintained by all speakers (p. 4)."
+      "note": "Thackston's underlined ç: unaspirated, pharyngealized; not maintained by all speakers (p. 4).",
+      "hint": {
+        "status": "proposed",
+        "en": "ch with no puff, tense (some speakers)"
+      }
     },
     "d": {
       "ipa": "d",
@@ -83,6 +111,14 @@
       "aspirated": false,
       "display": {
         "Latn": "d"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "d in dog",
+        "example": {
+          "text": "dil",
+          "gloss": "heart"
+        }
       }
     },
     "f": {
@@ -93,6 +129,10 @@
       "aspirated": false,
       "display": {
         "Latn": "f"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "f in fan"
       }
     },
     "g": {
@@ -103,6 +143,14 @@
       "aspirated": false,
       "display": {
         "Latn": "g"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "g in go",
+        "example": {
+          "text": "gul",
+          "gloss": "flower"
+        }
       }
     },
     "h": {
@@ -113,6 +161,14 @@
       "aspirated": false,
       "display": {
         "Latn": "h"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "h in hat",
+        "example": {
+          "text": "hev",
+          "gloss": "each other"
+        }
       }
     },
     "ḥ": {
@@ -124,7 +180,11 @@
       "display": {
         "Latn": "ḥ"
       },
-      "note": "Thackston's underlined h; elsewhere not distinguished from h."
+      "note": "Thackston's underlined h; elsewhere not distinguished from h.",
+      "hint": {
+        "status": "proposed",
+        "en": "a tight h from deep in the throat (Arabic ḥ)"
+      }
     },
     "j": {
       "ipa": "ʒ",
@@ -134,6 +194,14 @@
       "aspirated": false,
       "display": {
         "Latn": "j"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "s in measure",
+        "example": {
+          "text": "jin",
+          "gloss": "woman"
+        }
       }
     },
     "k": {
@@ -144,9 +212,17 @@
       "aspirated": true,
       "display": {
         "Latn": "k"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k in kin, with a puff",
+        "example": {
+          "text": "kur",
+          "gloss": "son"
+        }
       }
     },
-    "ḵ": {
+    "ḵ": {
       "ipa": "kˤ",
       "place": "velar",
       "manner": "stop",
@@ -156,7 +232,11 @@
         "Latn": "ḵ"
       },
       "pharyngealized": true,
-      "note": "Thackston's underlined k: unaspirated, pharyngealized; not maintained by all speakers."
+      "note": "Thackston's underlined k: unaspirated, pharyngealized; not maintained by all speakers.",
+      "hint": {
+        "status": "proposed",
+        "en": "k with no puff, tense (some speakers)"
+      }
     },
     "l": {
       "ipa": "l",
@@ -166,6 +246,10 @@
       "aspirated": false,
       "display": {
         "Latn": "l"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "l in let"
       }
     },
     "m": {
@@ -176,6 +260,14 @@
       "aspirated": false,
       "display": {
         "Latn": "m"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "m in man",
+        "example": {
+          "text": "mal",
+          "gloss": "house"
+        }
       }
     },
     "n": {
@@ -186,6 +278,14 @@
       "aspirated": false,
       "display": {
         "Latn": "n"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "n in no",
+        "example": {
+          "text": "nan",
+          "gloss": "bread"
+        }
       }
     },
     "p": {
@@ -196,6 +296,10 @@
       "aspirated": true,
       "display": {
         "Latn": "p"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "p in pin, with a puff"
       }
     },
     "p̱": {
@@ -208,7 +312,11 @@
         "Latn": "p̱"
       },
       "pharyngealized": true,
-      "note": "Thackston's underlined p: unaspirated, pharyngealized; not maintained by all speakers."
+      "note": "Thackston's underlined p: unaspirated, pharyngealized; not maintained by all speakers.",
+      "hint": {
+        "status": "proposed",
+        "en": "p with no puff, tense (some speakers)"
+      }
     },
     "q": {
       "ipa": "q",
@@ -218,6 +326,10 @@
       "aspirated": false,
       "display": {
         "Latn": "q"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k made further back, in the throat (Arabic q)"
       }
     },
     "r": {
@@ -229,7 +341,11 @@
       "display": {
         "Latn": "r"
       },
-      "note": "Flap; does not occur word-initially."
+      "note": "Flap; does not occur word-initially.",
+      "hint": {
+        "status": "proposed",
+        "en": "a single tapped r, like the tt in American butter; never at the start of a word"
+      }
     },
     "rr": {
       "ipa": "r",
@@ -240,7 +356,15 @@
       "display": {
         "Latn": "rr"
       },
-      "note": "Trill; every initial r is trilled. Spelled rr only sporadically (pirr); a transcriber writes rr wherever a trill is heard."
+      "note": "Trill; every initial r is trilled. Spelled rr only sporadically (pirr); a transcriber writes rr wherever a trill is heard.",
+      "hint": {
+        "status": "proposed",
+        "en": "a rolled r, as in Spanish perro",
+        "example": {
+          "text": "pirr",
+          "gloss": "very"
+        }
+      }
     },
     "s": {
       "ipa": "s",
@@ -250,6 +374,10 @@
       "aspirated": false,
       "display": {
         "Latn": "s"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "s in sun"
       }
     },
     "ş": {
@@ -260,6 +388,14 @@
       "aspirated": false,
       "display": {
         "Latn": "ş"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "sh in shoe",
+        "example": {
+          "text": "şev",
+          "gloss": "night"
+        }
       }
     },
     "t": {
@@ -270,9 +406,17 @@
       "aspirated": true,
       "display": {
         "Latn": "t"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "t in top, with a puff",
+        "example": {
+          "text": "tu",
+          "gloss": "you"
+        }
       }
     },
-    "ṯ": {
+    "ṯ": {
       "ipa": "tˤ",
       "place": "alveolar",
       "manner": "stop",
@@ -282,7 +426,11 @@
         "Latn": "ṯ"
       },
       "pharyngealized": true,
-      "note": "Thackston's underlined t: unaspirated, pharyngealized; not maintained by all speakers."
+      "note": "Thackston's underlined t: unaspirated, pharyngealized; not maintained by all speakers.",
+      "hint": {
+        "status": "proposed",
+        "en": "t with no puff, tense (some speakers)"
+      }
     },
     "v": {
       "ipa": "v",
@@ -292,6 +440,14 @@
       "aspirated": false,
       "display": {
         "Latn": "v"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "v in van",
+        "example": {
+          "text": "av",
+          "gloss": "water"
+        }
       }
     },
     "w": {
@@ -310,7 +466,11 @@
           "unverified": true,
           "note": "[ɯ] is a vowel symbol; the glide would be [ɰ] or non-syllabic [ɯ]. Thackston's French comparison (cuire, huit) points to [ɥ], a rounded glide."
         }
-      ]
+      ],
+      "hint": {
+        "status": "proposed",
+        "en": "w in we"
+      }
     },
     "x": {
       "ipa": "x",
@@ -328,7 +488,15 @@
           "unverified": true,
           "note": "Thackston calls x uvular but writes the velar symbol; not yet verified for Gazîn's recording."
         }
-      ]
+      ],
+      "hint": {
+        "status": "proposed",
+        "en": "ch in Scottish loch, German Bach",
+        "example": {
+          "text": "xwe",
+          "gloss": "self"
+        }
+      }
     },
     "x̱": {
       "ipa": "ɣ",
@@ -347,7 +515,11 @@
           "unverified": true,
           "note": "As for x: velar or uvular not yet verified."
         }
-      ]
+      ],
+      "hint": {
+        "status": "proposed",
+        "en": "a gargled g, like a French r (Arabic gh)"
+      }
     },
     "y": {
       "ipa": "j",
@@ -357,6 +529,14 @@
       "aspirated": false,
       "display": {
         "Latn": "y"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "y in yes",
+        "example": {
+          "text": "yek",
+          "gloss": "one"
+        }
       }
     },
     "z": {
@@ -367,6 +547,10 @@
       "aspirated": false,
       "display": {
         "Latn": "z"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "z in zoo"
       }
     },
     "ʿ": {
@@ -378,7 +562,11 @@
       "display": {
         "Latn": "ʿ"
       },
-      "note": "Not part of the orthography; marks Arabic 'ayn in Thackston's vocabulary."
+      "note": "Not part of the orthography; marks Arabic 'ayn in Thackston's vocabulary.",
+      "hint": {
+        "status": "proposed",
+        "en": "a squeeze in the throat (Arabic ʿayn); not written in everyday spelling"
+      }
     }
   },
   "codas": "consonants",
@@ -392,7 +580,11 @@
       "display": {
         "Latn": "î"
       },
-      "example": "nîv [niv] half"
+      "example": "nîv [niv] half",
+      "hint": {
+        "status": "proposed",
+        "en": "ee in see"
+      }
     },
     "i": {
       "ipa": "ɪ",
@@ -410,7 +602,11 @@
           "context": "often in closed syllables ending in m",
           "example": "vedixwim [ˈvædɪxwɨm] I drink"
         }
-      ]
+      ],
+      "hint": {
+        "status": "proposed",
+        "en": "i in bit"
+      }
     },
     "ê": {
       "ipa": "e",
@@ -421,7 +617,11 @@
       "display": {
         "Latn": "ê"
       },
-      "example": "hêz [hez] power"
+      "example": "hêz [hez] power",
+      "hint": {
+        "status": "proposed",
+        "en": "ay in say, held without gliding"
+      }
     },
     "e": {
       "ipa": "æ",
@@ -450,7 +650,11 @@
           "example": "miróvek [mɪˈrovɛk] a man"
         }
       ],
-      "note": "Thackston takes [æ] as the reference pronunciation; many speakers are closer to [ɛ]."
+      "note": "Thackston takes [æ] as the reference pronunciation; many speakers are closer to [ɛ].",
+      "hint": {
+        "status": "proposed",
+        "en": "a in cat; many speakers say e in bed"
+      }
     },
     "û": {
       "ipa": "u",
@@ -461,7 +665,11 @@
       "display": {
         "Latn": "û"
       },
-      "example": "bûn [bun] to be"
+      "example": "bûn [bun] to be",
+      "hint": {
+        "status": "proposed",
+        "en": "oo in food"
+      }
     },
     "u": {
       "ipa": "ʊ",
@@ -480,7 +688,11 @@
           "example": "gur [gɯɛɾ] or [gʊɾ] wolf",
           "unverified": true
         }
-      ]
+      ],
+      "hint": {
+        "status": "proposed",
+        "en": "u in put"
+      }
     },
     "o": {
       "ipa": "o",
@@ -491,7 +703,11 @@
       "display": {
         "Latn": "o"
       },
-      "example": "nod [nod] ninety"
+      "example": "nod [nod] ninety",
+      "hint": {
+        "status": "proposed",
+        "en": "o in go, held without gliding"
+      }
     },
     "a": {
       "ipa": "ɑ",
@@ -502,7 +718,11 @@
       "display": {
         "Latn": "a"
       },
-      "example": "bav [bɑv] father"
+      "example": "bav [bɑv] father",
+      "hint": {
+        "status": "proposed",
+        "en": "a in father"
+      }
     }
   }
 }

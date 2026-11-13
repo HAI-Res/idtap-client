@@ -443,3 +443,22 @@ def test_assigning_syllables_repairs_a_malformed_phrase():
     p.phrase_grid[0][0].syllables = [copy.deepcopy(SYL_A1)]
     assert p.phrase_grid[0][0].malformed_syllables is None
     assert save(p)["phraseGrid"][0][0]["syllables"] == [SYL_A1]
+
+
+# --------------------------------------------------------------------------- NFC (0.3.1)
+def test_pack_keys_are_looked_up_nfc_normalized():
+    """Contract 0.3.1: pack keys are NFC (Kurmanji ḵ = U+1E35). A decomposed
+    key (k + U+0331, as 0.3.0 packs and some keyboards produce) is the same key
+    for every lookup; the stored syllable is not rewritten."""
+    pack = SYL.load_pack("kurmanji")
+    decomposed = "ḵ"
+    assert decomposed not in pack["consonants"] and "ḵ" in pack["consonants"]
+    syl = {"anchor": {"traj": "a1", "t": 0}, "onset": decomposed, "nucleus": "a",
+           "lyric": {"vowel": "a", "source": "human"}}
+    assert SYL.derive_ipa(syl, pack) == SYL.derive_ipa(dict(syl, onset="ḵ"), pack)
+    doc = legacy_doc()
+    doc["system"] = {"phonology": "kurmanji"}
+    doc["phraseGrid"][0][0]["syllables"] = [syl]
+    p = load(doc)
+    assert "key-unknown" not in [c for c, _ in p.syllable_violations()]
+    assert save(p)["phraseGrid"][0][0]["syllables"][0]["onset"] == decomposed

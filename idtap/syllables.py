@@ -25,6 +25,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 PACKS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "packs")
@@ -75,6 +76,22 @@ def load_pack(pid: str) -> Dict[str, Any]:
         with open(path, encoding="utf-8") as f:
             _PACKS[pid] = json.load(f)
     return _PACKS[pid]
+
+
+def nfc(key: Any) -> Any:
+    """Pack keys are NFC (contract 0.3.1: Kurmanji ḵ ṯ precomposed; p̱ ç̱ x̱
+    keep U+0331). Lookups normalize the key they are given; stored syllables
+    are never rewritten."""
+    return unicodedata.normalize("NFC", key) if isinstance(key, str) else key
+
+
+def lookup(table: Dict[str, Any], key: Any) -> Optional[Dict[str, Any]]:
+    """``table[key]`` with the key NFC-normalized, or None."""
+    return table.get(nfc(key)) if isinstance(key, str) else None
+
+
+def in_pack(table: Dict[str, Any], key: Any) -> bool:
+    return lookup(table, key) is not None
 
 
 # --------------------------------------------------------------------- PROP-7
@@ -227,7 +244,7 @@ def _legacy_entry(pack: Dict[str, Any], table: str, key: Any) -> Optional[Tuple[
     if key is None or isinstance(key, list):
         return None  # clusters are reduced by the caller
     if pack["id"] == LEGACY_PACK:
-        e = pack[table].get(key) if table != "codas" else codas_of(pack).get(key)
+        e = lookup(pack[table] if table != "codas" else codas_of(pack), key)
         leg = (e or {}).get("legacy")
         if e is None:
             # unknown stored string: today's code keeps it and its copies are undefined
@@ -372,24 +389,24 @@ def derive_ipa(syl: Dict[str, Any], pack: Dict[str, Any]) -> Optional[str]:
     violation is check_invariants' to report."""
     parts = []
     for k in _keys(syl.get("onset")):
-        e = pack["consonants"].get(k)
+        e = lookup(pack["consonants"], k)
         if e is None:
             return None
         parts.append(e["ipa"])
     if pack.get("finals") is not None:
         fk = final_key(syl)
-        f = pack["finals"].get(fk) if fk is not None else None
+        f = lookup(pack["finals"], fk) if fk is not None else None
         if f is None:
             return None
         parts.append(f["ipa"])
     else:
         if syl.get("nucleus") is not None:
-            e = pack["vowels"].get(syl["nucleus"])
+            e = lookup(pack["vowels"], syl["nucleus"])
             if e is None:
                 return None
             parts.append(e.get("ipa", ""))
         for k in _keys(syl.get("coda")):
-            e = codas_of(pack).get(k)
+            e = lookup(codas_of(pack), k)
             if e is None:
                 return None
             parts.append(e["ipa"])
@@ -404,7 +421,7 @@ def derived_tone(syl: Dict[str, Any], pack: Dict[str, Any], system: str = "nine"
     if tone is None or ts is None:
         return tone
     coda = syl.get("coda")
-    if isinstance(coda, str) and coda in ts["checkedCodas"]:
+    if isinstance(coda, str) and nfc(coda) in ts["checkedCodas"]:
         return ts["checked"].get(tone, tone)
     return tone
 
@@ -457,26 +474,26 @@ def check_invariants(piece: Dict[str, Any]) -> List[Tuple[str, str]]:
                     if isinstance(x, list) and not pack["flags"][flag]:
                         v.append(("cluster-not-allowed", where))
                     for key in (x if isinstance(x, list) else [x] if x is not None else []):
-                        if key not in table:
+                        if not in_pack(table, key):
                             v.append(("key-unknown", where))
                 nuc = s.get("nucleus")
-                if nuc is not None and nuc not in pack["vowels"]:
+                if nuc is not None and not in_pack(pack["vowels"], nuc):
                     v.append(("key-unknown", where))
                 # editors keep nucleus and lyric.vowel in sync; absent == null
-                if nuc != (s.get("lyric") or {}).get("vowel"):
+                if nfc(nuc) != nfc((s.get("lyric") or {}).get("vowel")):
                     v.append(("nucleus-lyric-mismatch", where))
                 for obs in ("lyric", "sung"):
                     ov = (s.get(obs) or {}).get("vowel")
-                    if ov is not None and ov not in pack["vowels"]:
+                    if ov is not None and not in_pack(pack["vowels"], ov):
                         v.append(("key-unknown", where))
                 if s.get("tone") is not None:
                     if not pack["flags"]["tones"]:
                         v.append(("tone-not-allowed", where))
-                    elif s["tone"] not in pack["tones"]:
+                    elif not in_pack(pack["tones"], s["tone"]):
                         v.append(("key-unknown", where))
                 if pack.get("finals") is not None:
                     fk = final_key(s)
-                    f = pack["finals"].get(fk) if fk is not None else None
+                    f = lookup(pack["finals"], fk) if fk is not None else None
                     if fk is None:
                         pass  # coda cluster: already reported as cluster-not-allowed
                     elif f is None:
@@ -535,17 +552,15 @@ def legacy_safe(piece: Dict[str, Any]) -> Tuple[bool, List[str]]:
     the stored legacy fields rebuilds exactly the stored syllables.
     -> (bool, sorted reason codes). The server enforces this; clients may use
     it to explain a refusal."""
+    if any(code == "syllable-malformed" for code, _ in check_invariants(piece)):
+        # a tier the guard cannot read: refuse rather than let an old client drop it
+        return (False, ["unreadable"])
     reasons = set()
     pack = pack_of(piece)
     if pack["id"] != LEGACY_PACK:
         reasons.add("pack")
     for track in piece["phraseGrid"]:
         for ph in track:
-            if syllables_malformed(ph.get("syllables")):
-                # PROP-8 syllable-malformed: an old client's save would drop
-                # entries nobody can rebuild (reason `unreadable`)
-                reasons.add("unreadable")
-                continue
             for s in ph.get("syllables") or []:
                 for f in s:
                     if f not in LEGACY_HOLDABLE:
@@ -560,7 +575,7 @@ def legacy_safe(piece: Dict[str, Any]) -> Tuple[bool, List[str]]:
                                      (s.get("coda"), codas_of(pack)),
                                      (s.get("nucleus"), pack["vowels"]),
                                      ((s.get("lyric") or {}).get("vowel"), pack["vowels"])):
-                        if isinstance(k, str) and k in table and "legacy" not in table[k]:
+                        if isinstance(k, str) and in_pack(table, k) and "legacy" not in lookup(table, k):
                             reasons.add("key")
     if not reasons:
         rebuilt = heal_piece(strip_syllables(piece))
@@ -568,7 +583,7 @@ def legacy_safe(piece: Dict[str, Any]) -> Tuple[bool, List[str]]:
             for pa, pb in zip(ta, tb):
                 # A phrase with no stored tier (absent or null) is not compared:
                 # a pre-0.3.0 save keeps its legacy fields and drops nothing.
-                if pa.get("syllables") is None or syllables_malformed(pa.get("syllables")):
+                if pa.get("syllables") is None:
                     continue
                 # a stored tier on a non-vocal track is not rebuilt by the heal,
                 # so an old client's save would lose it
