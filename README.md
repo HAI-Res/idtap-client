@@ -229,9 +229,9 @@ from idtap import login_google
 login_google()
 ```
 
-## Syllables, transcription systems and phoneme packs (contract 0.3.0)
+## Syllables, transcription systems and phoneme packs (contract 0.3.x)
 
-From idtap-contract 0.3.0 a transcription can carry:
+From idtap-contract 0.3.0 a transcription can carry (pack keys are NFC since 0.3.1):
 
 - `piece.system`: the transcription system, e.g. `{"phonology": "jyutping"}`. `None` means
   Hindustani (`piece.resolved_system` fills in the defaults).
@@ -250,7 +250,7 @@ not `trajectory.vowel`. `piece.syllable_violations()` lists the load-time invari
 bundled phoneme packs (`load_pack("hindi-urdu" | "jyutping" | "kurmanji")`,
 `derive_ipa`, `derived_tone`).
 
-Every request sends `X-IDTAP-Client: python/0.3.0`. If the server refuses a save
+Every request sends `X-IDTAP-Client: python/<contract version>` (0.3.1). If the server refuses a save
 because the stored piece holds data an older client would destroy, the save raises
 `idtap.WriteGuardError` with `.reasons`. Nothing is retried, and your local `Piece`
 is unchanged.

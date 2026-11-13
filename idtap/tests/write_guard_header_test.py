@@ -24,15 +24,15 @@ def _client():
 
 
 def test_header_value_is_the_contract_version():
-    assert CONTRACT_VERSION == "0.3.0"
-    assert _client()._auth_headers()["X-IDTAP-Client"] == "python/0.3.0"
+    assert CONTRACT_VERSION == "0.3.1"
+    assert _client()._auth_headers()["X-IDTAP-Client"] == "python/0.3.1"
 
 
 @responses.activate
 def test_header_on_bearer_save_route():
     responses.post(BASE + "api/transcription", json={"ok": 1}, status=200)
     _client().save_piece({"_id": "1"})
-    assert responses.calls[0].request.headers["X-IDTAP-Client"] == "python/0.3.0"
+    assert responses.calls[0].request.headers["X-IDTAP-Client"] == "python/0.3.1"
     assert responses.calls[0].request.headers["Authorization"] == "Bearer abc"
 
 
@@ -43,14 +43,14 @@ def test_header_on_insert_and_reads():
     c = _client()
     c.insert_new_transcription({"title": "t"})
     c._get("api/transcriptions")
-    assert all(call.request.headers["X-IDTAP-Client"] == "python/0.3.0" for call in responses.calls)
+    assert all(call.request.headers["X-IDTAP-Client"] == "python/0.3.1" for call in responses.calls)
 
 
 @responses.activate
 def test_header_without_a_token():
     responses.get(BASE + "api/transcriptions", json=[], status=200)
     SwaraClient(auto_login=False)._get("api/transcriptions")
-    assert responses.calls[0].request.headers["X-IDTAP-Client"] == "python/0.3.0"
+    assert responses.calls[0].request.headers["X-IDTAP-Client"] == "python/0.3.1"
 
 
 @responses.activate

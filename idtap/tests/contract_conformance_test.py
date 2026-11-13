@@ -28,7 +28,7 @@ from idtap.classes.piece import Piece
 # conformance suite. A minor bump means wire semantics changed (e.g. 0.2.0 =
 # PROP-6 vibrato v2, 0.3.0 = PROP-7/8/9 system, syllable tier, packs) and this
 # client needs the matching heal before it may load newer data.
-CONTRACT_VERSION = "0.3.0"
+CONTRACT_VERSION = "0.3.1"
 
 
 def _contract_dir():

@@ -1,7 +1,7 @@
 {
   "id": "hindi-urdu",
   "name": "Hindi / Urdu (Hindustani vocal)",
-  "packVersion": "1.0.0",
+  "packVersion": "1.1.0",
   "status": "complete",
   "keyScheme": "ISO 15919, consonants with the inherent a (ka, kha, ...), as stored in Trajectory.startConsonant/endConsonant/vowel since 2022.",
   "scripts": [
@@ -47,6 +47,10 @@
         "hindi": "क",
         "ipa": "k",
         "engTrans": "k"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k in skin: no puff of air"
       }
     },
     "kha": {
@@ -65,6 +69,10 @@
         "hindi": "ख",
         "ipa": "kʰ",
         "engTrans": "kh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k in kin, with a strong puff"
       }
     },
     "ga": {
@@ -83,6 +91,10 @@
         "hindi": "ग",
         "ipa": "g",
         "engTrans": "g"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "g in go"
       }
     },
     "gha": {
@@ -101,6 +113,10 @@
         "hindi": "घ",
         "ipa": "gʱ",
         "engTrans": "gh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "g with breath after it, like doghouse said fast"
       }
     },
     "ṅa": {
@@ -119,6 +135,10 @@
         "hindi": "ङ",
         "ipa": "ŋ",
         "engTrans": "ṅ"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ng in sing"
       }
     },
     "ca": {
@@ -137,6 +157,10 @@
         "hindi": "च",
         "ipa": "c",
         "engTrans": "c"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ch in church, but with no puff"
       }
     },
     "cha": {
@@ -155,6 +179,10 @@
         "hindi": "छ",
         "ipa": "cʰ",
         "engTrans": "ch"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ch in church, with a strong puff"
       }
     },
     "ja": {
@@ -173,6 +201,10 @@
         "hindi": "ज",
         "ipa": "ɟ",
         "engTrans": "j"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "j in jam"
       }
     },
     "jha": {
@@ -191,6 +223,10 @@
         "hindi": "झ",
         "ipa": "ɟʱ",
         "engTrans": "jh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "j with breath after it, like hedgehog said fast"
       }
     },
     "ña": {
@@ -209,6 +245,10 @@
         "hindi": "ञ",
         "ipa": "ɲ",
         "engTrans": "ñ"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ny in canyon"
       }
     },
     "ṭa": {
@@ -227,6 +267,10 @@
         "hindi": "ट",
         "ipa": "ʈ",
         "engTrans": "ṭ"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "t with the tongue tip curled back, no puff"
       }
     },
     "ṭha": {
@@ -245,6 +289,10 @@
         "hindi": "ठ",
         "ipa": "ʈʰ",
         "engTrans": "ṭh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "curled-back t, with a strong puff"
       }
     },
     "ḍa": {
@@ -263,6 +311,10 @@
         "hindi": "ड",
         "ipa": "ɖ",
         "engTrans": "ḍ"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "d with the tongue tip curled back"
       }
     },
     "ḍha": {
@@ -281,6 +333,10 @@
         "hindi": "ढ",
         "ipa": "ɖʱ",
         "engTrans": "ḍh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "curled-back d with breath after it"
       }
     },
     "ṇa": {
@@ -293,6 +349,10 @@
         "Deva": "ण",
         "Latn": "ṇ",
         "Arab": "ن"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "n with the tongue tip curled back"
       }
     },
     "ta": {
@@ -311,6 +371,10 @@
         "hindi": "त",
         "ipa": "t",
         "engTrans": "t"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "t with the tongue on the teeth, no puff (Spanish t)"
       }
     },
     "tha": {
@@ -329,6 +393,10 @@
         "hindi": "थ",
         "ipa": "tʰ",
         "engTrans": "th"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "teeth t with a strong puff; not the th in thin"
       }
     },
     "da": {
@@ -347,6 +415,10 @@
         "hindi": "द",
         "ipa": "d",
         "engTrans": "d"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "d with the tongue on the teeth (Spanish d in dos)"
       }
     },
     "dha": {
@@ -365,6 +437,10 @@
         "hindi": "ध",
         "ipa": "dʱ",
         "engTrans": "dh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "teeth d with breath after it; not the th in this"
       }
     },
     "na": {
@@ -383,6 +459,10 @@
         "hindi": "न",
         "ipa": "n",
         "engTrans": "n"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "n in no"
       }
     },
     "pa": {
@@ -401,6 +481,10 @@
         "hindi": "प",
         "ipa": "p",
         "engTrans": "p"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "p in spin: no puff of air"
       }
     },
     "pha": {
@@ -419,6 +503,10 @@
         "hindi": "फ़",
         "ipa": "pʰ",
         "engTrans": "ph"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "p in pin, with a strong puff; not f"
       }
     },
     "ba": {
@@ -437,6 +525,10 @@
         "hindi": "ब",
         "ipa": "b",
         "engTrans": "b"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "b in bat"
       }
     },
     "bha": {
@@ -455,6 +547,10 @@
         "hindi": "भ",
         "ipa": "bʱ",
         "engTrans": "bh"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "b with breath after it, like clubhouse said fast"
       }
     },
     "ma": {
@@ -473,6 +569,10 @@
         "hindi": "म",
         "ipa": "m",
         "engTrans": "m"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "m in man"
       }
     },
     "ya": {
@@ -491,6 +591,10 @@
         "hindi": "य",
         "ipa": "j",
         "engTrans": "y"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "y in yes"
       }
     },
     "ra": {
@@ -509,6 +613,10 @@
         "hindi": "र",
         "ipa": "r",
         "engTrans": "r"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "a single tapped r, like the tt in American butter"
       }
     },
     "la": {
@@ -527,6 +635,10 @@
         "hindi": "ल",
         "ipa": "l",
         "engTrans": "l"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "l in leaf"
       }
     },
     "va": {
@@ -545,6 +657,10 @@
         "hindi": "व",
         "ipa": "v",
         "engTrans": "v"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "between v and w: v in van with the lips barely touching"
       }
     },
     "śa": {
@@ -563,6 +679,10 @@
         "hindi": "श",
         "ipa": "ʃ",
         "engTrans": "ś"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "sh in shoe"
       }
     },
     "ṣa": {
@@ -581,6 +701,10 @@
         "hindi": "ष",
         "ipa": "ʂ",
         "engTrans": "ṣ"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "sh with the tongue curled back; many singers say plain sh"
       }
     },
     "sa": {
@@ -599,6 +723,10 @@
         "hindi": "स",
         "ipa": "s",
         "engTrans": "s"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "s in sun"
       }
     },
     "ha": {
@@ -617,6 +745,10 @@
         "hindi": "ह",
         "ipa": "h",
         "engTrans": "h"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "h in hat, often with a breathy voice"
       }
     }
   },
@@ -637,6 +769,10 @@
         "hindi": "अ",
         "ipa": "ə",
         "engTrans": "a"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "a in about, u in cup"
       }
     },
     "ā": {
@@ -654,6 +790,10 @@
         "hindi": "आ",
         "ipa": "aː",
         "engTrans": "ā"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "a in father"
       }
     },
     "i": {
@@ -671,6 +811,10 @@
         "hindi": "इ",
         "ipa": "ɪ",
         "engTrans": "i"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "i in bit"
       }
     },
     "ī": {
@@ -688,6 +832,10 @@
         "hindi": "ई",
         "ipa": "iː",
         "engTrans": "ī"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ee in see"
       }
     },
     "u": {
@@ -705,6 +853,10 @@
         "hindi": "उ",
         "ipa": "ʊ",
         "engTrans": "u"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "u in put"
       }
     },
     "ū": {
@@ -722,6 +874,10 @@
         "hindi": "ऊ",
         "ipa": "uː",
         "engTrans": "ū"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "oo in food"
       }
     },
     "ē": {
@@ -739,6 +895,10 @@
         "hindi": "ए",
         "ipa": "eː",
         "engTrans": "ē"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ay in say, held without gliding"
       }
     },
     "ai": {
@@ -756,6 +916,10 @@
         "hindi": "ऐ",
         "ipa": "ɛː",
         "engTrans": "ai"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "a in cat; some singers say a-i, as in aisle"
       }
     },
     "ō": {
@@ -773,6 +937,10 @@
         "hindi": "ओ",
         "ipa": "oː",
         "engTrans": "ō"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "o in go, held without gliding"
       }
     },
     "au": {
@@ -790,6 +958,10 @@
         "hindi": "औ",
         "ipa": "ɔː",
         "engTrans": "au"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "aw in law; some singers say ow, as in cow"
       }
     },
     "_": {

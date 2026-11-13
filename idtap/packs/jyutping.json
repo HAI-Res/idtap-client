@@ -1,7 +1,7 @@
 {
   "id": "jyutping",
   "name": "Cantonese (Jyutping)",
-  "packVersion": "0.1.0",
+  "packVersion": "0.2.0",
   "status": "draft: pending review by Yingyao Yu",
   "keyScheme": "LSHK Jyutping letters. A syllable stores onset, nucleus and coda as Jyutping letters and tone as its digit; IPA is derived from `finals`, never stored.",
   "scripts": [
@@ -40,6 +40,14 @@
       "aspirated": false,
       "display": {
         "Latn": "b"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "p in spin: no puff, not a full b",
+        "example": {
+          "text": "爸",
+          "romanization": "baa1"
+        }
       }
     },
     "p": {
@@ -50,6 +58,14 @@
       "aspirated": true,
       "display": {
         "Latn": "p"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "p in pin, with a puff",
+        "example": {
+          "text": "怕",
+          "romanization": "paa3"
+        }
       }
     },
     "m": {
@@ -60,6 +76,14 @@
       "aspirated": false,
       "display": {
         "Latn": "m"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "m in man",
+        "example": {
+          "text": "媽",
+          "romanization": "maa1"
+        }
       }
     },
     "f": {
@@ -70,6 +94,14 @@
       "aspirated": false,
       "display": {
         "Latn": "f"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "f in fan",
+        "example": {
+          "text": "花",
+          "romanization": "faa1"
+        }
       }
     },
     "d": {
@@ -80,6 +112,14 @@
       "aspirated": false,
       "display": {
         "Latn": "d"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "t in stop: no puff, not a full d",
+        "example": {
+          "text": "打",
+          "romanization": "daa2"
+        }
       }
     },
     "t": {
@@ -90,6 +130,14 @@
       "aspirated": true,
       "display": {
         "Latn": "t"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "t in top, with a puff",
+        "example": {
+          "text": "他",
+          "romanization": "taa1"
+        }
       }
     },
     "n": {
@@ -100,6 +148,14 @@
       "aspirated": false,
       "display": {
         "Latn": "n"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "n in no; many speakers say l instead",
+        "example": {
+          "text": "拿",
+          "romanization": "naa4"
+        }
       }
     },
     "l": {
@@ -110,6 +166,14 @@
       "aspirated": false,
       "display": {
         "Latn": "l"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "l in let",
+        "example": {
+          "text": "啦",
+          "romanization": "laa1"
+        }
       }
     },
     "g": {
@@ -120,6 +184,14 @@
       "aspirated": false,
       "display": {
         "Latn": "g"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k in skin: no puff, not a full g",
+        "example": {
+          "text": "家",
+          "romanization": "gaa1"
+        }
       }
     },
     "k": {
@@ -130,6 +202,14 @@
       "aspirated": true,
       "display": {
         "Latn": "k"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k in kin, with a puff",
+        "example": {
+          "text": "卡",
+          "romanization": "kaa1"
+        }
       }
     },
     "ng": {
@@ -140,6 +220,14 @@
       "aspirated": false,
       "display": {
         "Latn": "ng"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ng in sing, at the start; many speakers drop it",
+        "example": {
+          "text": "牙",
+          "romanization": "ngaa4"
+        }
       }
     },
     "h": {
@@ -150,6 +238,14 @@
       "aspirated": false,
       "display": {
         "Latn": "h"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "h in hat",
+        "example": {
+          "text": "蝦",
+          "romanization": "haa1"
+        }
       }
     },
     "gw": {
@@ -161,7 +257,15 @@
       "display": {
         "Latn": "gw"
       },
-      "labialized": true
+      "labialized": true,
+      "hint": {
+        "status": "proposed",
+        "en": "qu in squash: no puff",
+        "example": {
+          "text": "瓜",
+          "romanization": "gwaa1"
+        }
+      }
     },
     "kw": {
       "ipa": "kʷʰ",
@@ -172,7 +276,15 @@
       "display": {
         "Latn": "kw"
       },
-      "labialized": true
+      "labialized": true,
+      "hint": {
+        "status": "proposed",
+        "en": "qu in queen, with a puff",
+        "example": {
+          "text": "誇",
+          "romanization": "kwaa1"
+        }
+      }
     },
     "w": {
       "ipa": "w",
@@ -182,6 +294,14 @@
       "aspirated": false,
       "display": {
         "Latn": "w"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "w in we",
+        "example": {
+          "text": "華",
+          "romanization": "waa4"
+        }
       }
     },
     "z": {
@@ -192,6 +312,14 @@
       "aspirated": false,
       "display": {
         "Latn": "z"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ts in cats, or j in jeep: no puff",
+        "example": {
+          "text": "渣",
+          "romanization": "zaa1"
+        }
       }
     },
     "c": {
@@ -202,6 +330,14 @@
       "aspirated": true,
       "display": {
         "Latn": "c"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ts with a puff, or ch in cheap",
+        "example": {
+          "text": "茶",
+          "romanization": "caa4"
+        }
       }
     },
     "s": {
@@ -212,6 +348,14 @@
       "aspirated": false,
       "display": {
         "Latn": "s"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "s in see",
+        "example": {
+          "text": "沙",
+          "romanization": "saa1"
+        }
       }
     },
     "j": {
@@ -222,6 +366,14 @@
       "aspirated": false,
       "display": {
         "Latn": "j"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "y in yes",
+        "example": {
+          "text": "也",
+          "romanization": "jaa5"
+        }
       }
     }
   },
@@ -234,6 +386,14 @@
       "aspirated": false,
       "display": {
         "Latn": "i"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "glide towards ee, like the y in boy",
+        "example": {
+          "text": "西",
+          "romanization": "sai1"
+        }
       }
     },
     "u": {
@@ -244,6 +404,14 @@
       "aspirated": false,
       "display": {
         "Latn": "u"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "glide towards oo, like the w in cow",
+        "example": {
+          "text": "收",
+          "romanization": "sau1"
+        }
       }
     },
     "m": {
@@ -254,6 +422,14 @@
       "aspirated": false,
       "display": {
         "Latn": "m"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "m in him",
+        "example": {
+          "text": "心",
+          "romanization": "sam1"
+        }
       }
     },
     "n": {
@@ -264,6 +440,14 @@
       "aspirated": false,
       "display": {
         "Latn": "n"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "n in thin",
+        "example": {
+          "text": "新",
+          "romanization": "san1"
+        }
       }
     },
     "ng": {
@@ -274,6 +458,14 @@
       "aspirated": false,
       "display": {
         "Latn": "ng"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ng in sing",
+        "example": {
+          "text": "生",
+          "romanization": "sang1"
+        }
       }
     },
     "p": {
@@ -284,6 +476,14 @@
       "aspirated": false,
       "display": {
         "Latn": "p"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "p in stop, closed but not released",
+        "example": {
+          "text": "濕",
+          "romanization": "sap1"
+        }
       }
     },
     "t": {
@@ -294,6 +494,14 @@
       "aspirated": false,
       "display": {
         "Latn": "t"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "t in cat, closed but not released",
+        "example": {
+          "text": "失",
+          "romanization": "sat1"
+        }
       }
     },
     "k": {
@@ -304,6 +512,14 @@
       "aspirated": false,
       "display": {
         "Latn": "k"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "k in back, closed but not released",
+        "example": {
+          "text": "色",
+          "romanization": "sik1"
+        }
       }
     }
   },
@@ -316,6 +532,14 @@
       "length": "long",
       "display": {
         "Latn": "aa"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "a in father, long",
+        "example": {
+          "text": "沙",
+          "romanization": "saa1"
+        }
       }
     },
     "a": {
@@ -326,6 +550,14 @@
       "length": "short",
       "display": {
         "Latn": "a"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "u in cup, short; always followed by an ending",
+        "example": {
+          "text": "新",
+          "romanization": "san1"
+        }
       }
     },
     "e": {
@@ -336,6 +568,14 @@
       "length": "long",
       "display": {
         "Latn": "e"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "e in bed, long",
+        "example": {
+          "text": "些",
+          "romanization": "se1"
+        }
       }
     },
     "i": {
@@ -346,6 +586,14 @@
       "length": "long",
       "display": {
         "Latn": "i"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ee in see",
+        "example": {
+          "text": "詩",
+          "romanization": "si1"
+        }
       }
     },
     "o": {
@@ -356,6 +604,14 @@
       "length": "long",
       "display": {
         "Latn": "o"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "aw in law (British), long",
+        "example": {
+          "text": "歌",
+          "romanization": "go1"
+        }
       }
     },
     "u": {
@@ -366,6 +622,14 @@
       "length": "long",
       "display": {
         "Latn": "u"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "oo in food",
+        "example": {
+          "text": "苦",
+          "romanization": "fu2"
+        }
       }
     },
     "eo": {
@@ -376,6 +640,14 @@
       "length": "short",
       "display": {
         "Latn": "eo"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "short and rounded, between u in put and e in her; no English match",
+        "example": {
+          "text": "春",
+          "romanization": "ceon1"
+        }
       }
     },
     "oe": {
@@ -386,6 +658,14 @@
       "length": "long",
       "display": {
         "Latn": "oe"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "e in bed with rounded lips (French peur)",
+        "example": {
+          "text": "靴",
+          "romanization": "hoe1"
+        }
       }
     },
     "yu": {
@@ -396,6 +676,14 @@
       "length": "long",
       "display": {
         "Latn": "yu"
+      },
+      "hint": {
+        "status": "proposed",
+        "en": "ee in see with rounded lips (French tu)",
+        "example": {
+          "text": "書",
+          "romanization": "syu1"
+        }
       }
     }
   },
@@ -708,34 +996,97 @@
       "chao": "55",
       "chaoAlt": "55",
       "name": "high level",
-      "checkedChao": "5"
+      "checkedChao": "5",
+      "hint": {
+        "status": "proposed",
+        "en": "high and level, like holding a high note",
+        "example": {
+          "text": "詩",
+          "romanization": "si1"
+        },
+        "checkedExample": {
+          "text": "色",
+          "romanization": "sik1",
+          "nineTone": 7
+        }
+      }
     },
     "2": {
       "chao": "25",
       "chaoAlt": "35",
-      "name": "mid rising"
+      "name": "mid rising",
+      "hint": {
+        "status": "proposed",
+        "en": "rises from mid to high, like a surprised “huh?”",
+        "example": {
+          "text": "史",
+          "romanization": "si2"
+        }
+      }
     },
     "3": {
       "chao": "33",
       "chaoAlt": "33",
       "name": "mid level",
-      "checkedChao": "3"
+      "checkedChao": "3",
+      "hint": {
+        "status": "proposed",
+        "en": "mid and level",
+        "example": {
+          "text": "試",
+          "romanization": "si3"
+        },
+        "checkedExample": {
+          "text": "錫",
+          "romanization": "sek3",
+          "nineTone": 8
+        }
+      }
     },
     "4": {
       "chao": "21",
       "chaoAlt": "21",
-      "name": "low falling"
+      "name": "low falling",
+      "hint": {
+        "status": "proposed",
+        "en": "low and falling, like a let-down “oh”",
+        "example": {
+          "text": "時",
+          "romanization": "si4"
+        }
+      }
     },
     "5": {
       "chao": "23",
       "chaoAlt": "13",
-      "name": "low rising"
+      "name": "low rising",
+      "hint": {
+        "status": "proposed",
+        "en": "low, with a small rise",
+        "example": {
+          "text": "市",
+          "romanization": "si5"
+        }
+      }
     },
     "6": {
       "chao": "22",
       "chaoAlt": "22",
       "name": "low level",
-      "checkedChao": "2"
+      "checkedChao": "2",
+      "hint": {
+        "status": "proposed",
+        "en": "low and level",
+        "example": {
+          "text": "是",
+          "romanization": "si6"
+        },
+        "checkedExample": {
+          "text": "食",
+          "romanization": "sik6",
+          "nineTone": 9
+        }
+      }
     }
   },
   "toneSystems": {
