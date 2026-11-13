@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import List, TypedDict, Optional, Dict
 
 import humps
+from ..utils import split_unknown_keys, merge_extra_keys
 
 
 def get_starts(dur_array: List[float]) -> List[float]:
@@ -56,7 +57,7 @@ class Automation:
             return
             
         # Define allowed parameter names
-        allowed_keys = {'values'}
+        allowed_keys = {'values'}  # == Automation._KNOWN_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -214,7 +215,11 @@ class Automation:
     # ------------------------------------------------------------------
     @staticmethod
     def from_json(obj: Dict) -> 'Automation':
-        return Automation(obj)
+        # Unknown wire keys are kept verbatim and re-emitted (PROP-8).
+        obj, extra = split_unknown_keys(obj, {'values'})
+        auto = Automation(obj)
+        auto._extra = extra
+        return auto
 
     def to_json(self) -> Dict:
         # normTime, not norm_time: every other class camelises on the way out,
@@ -222,5 +227,6 @@ class Automation:
         # normTime undefined there, so no point satisfies `normTime <= x`, and
         # the first call to valueAtX throws for x = 0 -- a transcription that
         # loads, displays, and refuses to play.
-        return {'values': [{'normTime': v['norm_time'], 'value': v['value']}
-                           for v in self.values]}
+        out = {'values': [{'normTime': v['norm_time'], 'value': v['value']}
+                          for v in self.values]}
+        return merge_extra_keys(out, getattr(self, '_extra', None))

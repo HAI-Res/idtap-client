@@ -7,4 +7,4 @@ recursive-include idtap *.py
 recursive-include idtap *.typed
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
-exclude idtap.egg-info
+exclude idtap.egg-inforecursive-include idtap/packs *.json

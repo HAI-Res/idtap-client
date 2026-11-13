@@ -13,6 +13,7 @@ from .pitch import Pitch
 from .articulation import Articulation
 from .automation import Automation, get_starts
 from ..enums import Instrument
+from ..utils import split_unknown_keys, merge_extra_keys
 
 
 class VibObjType(TypedDict, total=False):
@@ -88,6 +89,18 @@ def _vib_bool(key: str, value) -> bool:
 
 
 class Trajectory:
+    # Keys this model understands. Constructor validation rejects anything else
+    # (to catch typos in hand-built trajectories); from_json instead keeps
+    # unknown wire keys verbatim in `_extra` and to_json re-emits them.
+    _KNOWN_KEYS = {
+        'id', 'pitches', 'dur_tot', 'dur_array', 'slope', 'vib_obj', 'instrumentation',
+        'articulations', 'num', 'name', 'fund_id12', 'vowel', 'vowel_ipa', 'vowel_hindi',
+        'vowel_eng_trans', 'start_consonant', 'start_consonant_hindi', 'start_consonant_ipa',
+        'start_consonant_eng_trans', 'end_consonant', 'end_consonant_hindi', 'end_consonant_ipa',
+        'end_consonant_eng_trans', 'group_id', 'automation', 'unique_id', 'tags', 'start_time',
+        'phrase_idx'
+    }
+
     def __init__(self, options: Optional[dict] = None) -> None:
         opts = humps.decamelize(options or {})
         
@@ -350,14 +363,7 @@ class Trajectory:
             return
             
         # Define allowed parameter names
-        allowed_keys = {
-            'id', 'pitches', 'dur_tot', 'dur_array', 'slope', 'vib_obj', 'instrumentation',
-            'articulations', 'num', 'name', 'fund_id12', 'vowel', 'vowel_ipa', 'vowel_hindi',
-            'vowel_eng_trans', 'start_consonant', 'start_consonant_hindi', 'start_consonant_ipa',
-            'start_consonant_eng_trans', 'end_consonant', 'end_consonant_hindi', 'end_consonant_ipa',
-            'end_consonant_eng_trans', 'group_id', 'automation', 'unique_id', 'tags', 'start_time',
-            'phrase_idx'
-        }
+        allowed_keys = Trajectory._KNOWN_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -1026,7 +1032,8 @@ class Trajectory:
             # tags: stripped — defaults to [] on load (idtap-contract TRAJ-1)
         }
         # drop None values so they serialize as undefined (omitted) rather than null
-        return {k: v for k, v in data.items() if v is not None}
+        out = {k: v for k, v in data.items() if v is not None}
+        return merge_extra_keys(out, getattr(self, '_extra', None))
 
     def vib_obj_to_json(self) -> Dict[str, float]:
         """The v2 vibObj in wire form (camelCase keys, plain floats)."""
@@ -1042,6 +1049,9 @@ class Trajectory:
     @staticmethod
     def from_json(obj: Dict, ratios=None, fundamental=None) -> 'Trajectory':
         # Thread raga context down to each pitch (idtap-contract TRAJ-2).
+        # Unknown keys are split off from the RAW object (before decamelize,
+        # which would rewrite nested keys) and re-emitted by to_json.
+        obj, extra = split_unknown_keys(obj, Trajectory._KNOWN_KEYS)
         opts = humps.decamelize(obj)
         # Legacy server data may contain negative durations from old editor
         # bugs; the web editor never validated these, so repair rather than
@@ -1064,10 +1074,15 @@ class Trajectory:
         pitches = [Pitch.from_json(p, ratios=ratios, fundamental=fundamental)
                    for p in opts.get('pitches', [])]
         arts = {}
-        for k,v in opts.get('articulations', {}).items():
+        # raw (camelCase) articulations, so unknown keys survive verbatim
+        for k,v in (obj.get('articulations') or {}).items():
             if v is not None:
                 arts[k] = Articulation.from_json(v)
         automation = opts.get('automation')
+        raw_auto = obj.get('automation')
+        if isinstance(raw_auto, dict):
+            # from the raw (camelCase) object, so unknown keys survive
+            automation = Automation.from_json(raw_auto)
         instr = opts.get('instrumentation')
         if isinstance(instr, str):
             try:
@@ -1077,7 +1092,9 @@ class Trajectory:
         opts['pitches'] = pitches
         opts['articulations'] = arts
         opts['automation'] = automation
-        return Trajectory(opts)
+        traj = Trajectory(opts)
+        traj._extra = extra
+        return traj
 
     @staticmethod
     def names() -> List[str]:

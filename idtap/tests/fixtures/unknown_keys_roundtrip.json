@@ -1,0 +1,432 @@
+{
+ "name": "unknown-keys-roundtrip",
+ "description": "Derived from idtap-contract fixtures/syllable/project-cantonese-tone-orthography.json (contract 0.3.0): a piece with system, lyricsText and syllables, plus unknown keys at every level (piece, raga, phrase, chikari, trajectory, articulation, automation). Loading and saving must keep every one of them verbatim (PROP-8 \"accept and round-trip keys it does not know\").",
+ "pieceJson": {
+  "raga": {
+   "name": "Yaman",
+   "fundamental": 246.0,
+   "ratios": [
+    1,
+    1.122462048309373,
+    1.2599210498948732,
+    1.4142135623730951,
+    1.4983070768766815,
+    1.681792830507429,
+    1.8877486253633868
+   ],
+   "tuning": {
+    "sa": 1,
+    "re": {
+     "lowered": 1.0594630943592953,
+     "raised": 1.122462048309373
+    },
+    "ga": {
+     "lowered": 1.189207115002721,
+     "raised": 1.2599210498948732
+    },
+    "ma": {
+     "lowered": 1.3348398541700344,
+     "raised": 1.4142135623730951
+    },
+    "pa": 1.4983070768766815,
+    "dha": {
+     "lowered": 1.5874010519681994,
+     "raised": 1.681792830507429
+    },
+    "ni": {
+     "lowered": 1.7817974362806785,
+     "raised": 1.8877486253633868
+    }
+   },
+   "futureRagaKey": "kept"
+  },
+  "phraseGrid": [
+   [
+    {
+     "durTot": 1.0,
+     "durArray": [
+      0.5,
+      0.5
+     ],
+     "chikaris": {
+      "0.25": {
+       "fundamental": 246.0,
+       "uniqueId": "ck1",
+       "futureChikariKey": true
+      }
+     },
+     "startTime": 0.0,
+     "trajectoryGrid": [
+      [
+       {
+        "id": 0,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "articulations": {
+         "0.50": {
+          "name": "slide",
+          "futureArtKey": "y"
+         }
+        },
+        "num": 0,
+        "uniqueId": "y1",
+        "futureTrajKey": {
+         "innerCamel": "x"
+        },
+        "automation": {
+         "values": [
+          {
+           "normTime": 0.0,
+           "value": 1.0
+          },
+          {
+           "normTime": 1.0,
+           "value": 1.0
+          }
+         ],
+         "futureAutoKey": 3
+        }
+       },
+       {
+        "id": 0,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "articulations": {},
+        "num": 0,
+        "uniqueId": "y2"
+       }
+      ]
+     ],
+     "instrumentation": [
+      "Vocal (F)"
+     ],
+     "groupsGrid": [
+      []
+     ],
+     "categorizationGrid": [],
+     "uniqueId": "ph-y0",
+     "adHocCategorizationGrid": [],
+     "isSectionStart": false,
+     "syllables": [
+      {
+       "anchor": {
+        "traj": "y1",
+        "t": 0
+       },
+       "onset": "s",
+       "nucleus": "i",
+       "tone": "1",
+       "orthography": "詩",
+       "romanization": "si1",
+       "wordStart": true,
+       "lyric": {
+        "vowel": "i",
+        "source": "pack"
+       }
+      }
+     ],
+     "futurePhraseKey": [
+      {
+       "someCamelKey": 1
+      }
+     ]
+    },
+    {
+     "durTot": 2.5,
+     "durArray": [
+      0.2,
+      0.2,
+      0.2,
+      0.2,
+      0.2
+     ],
+     "chikaris": {},
+     "startTime": 1.0,
+     "trajectoryGrid": [
+      [
+       {
+        "id": 0,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "articulations": {},
+        "num": 0,
+        "uniqueId": "y3"
+       },
+       {
+        "id": 0,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "articulations": {},
+        "num": 0,
+        "uniqueId": "y4"
+       },
+       {
+        "id": 0,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "articulations": {},
+        "num": 0,
+        "uniqueId": "y5"
+       },
+       {
+        "id": 12,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "num": 0,
+        "uniqueId": "y6"
+       },
+       {
+        "id": 0,
+        "pitches": [
+         {
+          "swara": 0,
+          "raised": true,
+          "oct": 0,
+          "logOffset": 0.0
+         }
+        ],
+        "durTot": 0.5,
+        "durArray": [
+         1.0
+        ],
+        "slope": 2.0,
+        "articulations": {},
+        "num": 0,
+        "uniqueId": "y7"
+       }
+      ]
+     ],
+     "instrumentation": [
+      "Vocal (F)"
+     ],
+     "groupsGrid": [
+      []
+     ],
+     "categorizationGrid": [],
+     "uniqueId": "ph-y1",
+     "adHocCategorizationGrid": [],
+     "isSectionStart": false,
+     "syllables": [
+      {
+       "anchor": {
+        "traj": "y4",
+        "t": 0
+       },
+       "coda": "m",
+       "tone": "4",
+       "orthography": "唔",
+       "romanization": "m4",
+       "wordStart": true,
+       "lyric": {
+        "vowel": null,
+        "source": "pack"
+       }
+      },
+      {
+       "anchor": {
+        "traj": "y5",
+        "t": 0
+       },
+       "onset": "h",
+       "nucleus": "o",
+       "coda": "u",
+       "tone": "2",
+       "orthography": "好",
+       "romanization": "hou2",
+       "lyric": {
+        "vowel": "o",
+        "source": "pack"
+       }
+      },
+      {
+       "anchor": {
+        "traj": "y7",
+        "t": 0
+       },
+       "onset": "s",
+       "nucleus": "i",
+       "coda": "k",
+       "tone": "6",
+       "orthography": "食",
+       "romanization": "sik6",
+       "wordStart": true,
+       "lyric": {
+        "vowel": "i",
+        "source": "pack"
+       }
+      }
+     ]
+    }
+   ]
+  ],
+  "instrumentation": [
+   "Vocal (F)"
+  ],
+  "durTot": 3.5,
+  "durArrayGrid": [
+   [
+    0.2857142857142857,
+    0.7142857142857143
+   ]
+  ],
+  "sectionCatGrid": [
+   []
+  ],
+  "meters": [],
+  "title": "Cantonese projection (fixture)",
+  "_id": "fixture000000000000000000",
+  "system": {
+   "phonology": "jyutping",
+   "display": [
+    "jyutping",
+    "Hant"
+   ]
+  },
+  "lyricsText": [
+   "詩唔好 食"
+  ],
+  "futurePieceKey": {
+   "nested": {
+    "camelCaseInside": [
+     1,
+     {
+      "deepKey": null
+     }
+    ]
+   }
+  }
+ },
+ "expected": {
+  "kept": [
+   [
+    "futurePieceKey"
+   ],
+   [
+    "raga",
+    "futureRagaKey"
+   ],
+   [
+    "phraseGrid",
+    0,
+    0,
+    "futurePhraseKey"
+   ],
+   [
+    "phraseGrid",
+    0,
+    0,
+    "syllables"
+   ],
+   [
+    "phraseGrid",
+    0,
+    0,
+    "chikaris",
+    "0.25",
+    "futureChikariKey"
+   ],
+   [
+    "phraseGrid",
+    0,
+    0,
+    "trajectoryGrid",
+    0,
+    0,
+    "futureTrajKey"
+   ],
+   [
+    "phraseGrid",
+    0,
+    0,
+    "trajectoryGrid",
+    0,
+    0,
+    "articulations",
+    "0.50",
+    "futureArtKey"
+   ],
+   [
+    "phraseGrid",
+    0,
+    0,
+    "trajectoryGrid",
+    0,
+    0,
+    "automation",
+    "futureAutoKey"
+   ],
+   [
+    "system"
+   ],
+   [
+    "lyricsText"
+   ]
+  ]
+ }
+}

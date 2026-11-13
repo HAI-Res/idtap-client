@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, TypedDict
 import uuid
 
 import humps
+from ..utils import split_unknown_keys, merge_extra_keys
 
 from .pitch import Pitch
 from ..constants import MIN_FUNDAMENTAL_HZ, MAX_FUNDAMENTAL_HZ
@@ -90,13 +91,16 @@ class Chikari:
 
     # ------------------------------------------------------------------
     def to_json(self) -> Dict:
-        return {
+        out = {
             'fundamental': self.fundamental,
             'uniqueId': self.unique_id,
         }
+        return merge_extra_keys(out, getattr(self, '_extra', None))
 
     @staticmethod
     def from_json(obj: Dict) -> 'Chikari':
+        # Unknown wire keys are kept verbatim and re-emitted (PROP-8).
+        obj, extra = split_unknown_keys(obj, {'pitches', 'fundamental', 'unique_id'})
         opts = humps.decamelize(obj)
         # Handle old format (with pitches) for backward compatibility
         pitches_data = opts.get('pitches')
@@ -111,4 +115,6 @@ class Chikari:
             # (Piece.chikari_freqs -> raga.chikari_pitches); leave pitches empty on
             # canonical load, matching the TS client's behavior.
             opts['pitches'] = []
-        return Chikari(opts)  # type: ignore[arg-type]
+        chikari = Chikari(opts)  # type: ignore[arg-type]
+        chikari._extra = extra
+        return chikari

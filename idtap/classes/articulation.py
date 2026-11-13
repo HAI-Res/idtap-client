@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Optional, TypedDict, Dict
 
 import humps
+from ..utils import split_unknown_keys, merge_extra_keys
 
 class ArticulationOptions(TypedDict, total=False):
     name: str
@@ -12,6 +13,8 @@ class ArticulationOptions(TypedDict, total=False):
     stroke_nickname: str
 
 class Articulation:
+    _KNOWN_KEYS = {'name', 'stroke', 'hindi', 'ipa', 'eng_trans', 'stroke_nickname'}
+
     def __init__(self, options: Optional[ArticulationOptions] = None) -> None:
         opts = humps.decamelize(options or {})
         
@@ -46,7 +49,7 @@ class Articulation:
             return
             
         # Define allowed parameter names
-        allowed_keys = {'name', 'stroke', 'hindi', 'ipa', 'eng_trans', 'stroke_nickname'}
+        allowed_keys = Articulation._KNOWN_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -79,7 +82,11 @@ class Articulation:
 
     @staticmethod
     def from_json(obj: Dict) -> 'Articulation':
-        return Articulation(obj)
+        # Unknown wire keys are kept verbatim and re-emitted (PROP-8).
+        obj, extra = split_unknown_keys(obj, Articulation._KNOWN_KEYS)
+        art = Articulation(obj)
+        art._extra = extra
+        return art
 
     def to_json(self) -> Dict:
         out = {}
@@ -95,7 +102,7 @@ class Articulation:
             out['engTrans'] = self.eng_trans
         if hasattr(self, 'stroke_nickname'):
             out['strokeNickname'] = self.stroke_nickname
-        return out
+        return merge_extra_keys(out, getattr(self, '_extra', None))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Articulation):

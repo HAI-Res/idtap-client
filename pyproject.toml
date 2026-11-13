@@ -80,7 +80,7 @@ where = ["."]
 include = ["idtap*"]
 
 [tool.setuptools.package-data]
-idtap = ["py.typed", "synthesis/presets/*.json"]
+idtap = ["py.typed", "synthesis/presets/*.json", "packs/*.json"]
 
 [tool.black]
 line-length = 88

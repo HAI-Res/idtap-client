@@ -4,6 +4,7 @@ import math
 import copy
 import humps
 import warnings
+from ..utils import split_unknown_keys, merge_extra_keys
 
 from .pitch import Pitch
 from ..constants import MIN_FUNDAMENTAL_HZ, MAX_FUNDAMENTAL_HZ
@@ -586,7 +587,7 @@ class Raga:
 
     # ------------------------------------------------------------------
     def to_json(self) -> Dict[str, Union[str, float, List[float], TuningType]]:
-        return {
+        out = {
             'name': self.name,
             'fundamental': self.fundamental,
             'ratios': self.ratios,
@@ -596,7 +597,12 @@ class Raga:
             # Wire key is camelCase; from_json decamelizes it back to rule_set.
             'ruleSet': self.rule_set,
         }
+        return merge_extra_keys(out, getattr(self, '_extra', None))
 
     @staticmethod
     def from_json(obj: Dict, client=None) -> 'Raga':
-        return Raga(obj, preserve_ratios=True, client=client)
+        # Unknown wire keys are kept verbatim and re-emitted (PROP-8).
+        obj, extra = split_unknown_keys(obj, {'name', 'fundamental', 'rule_set', 'tuning', 'ratios'})
+        raga = Raga(obj, preserve_ratios=True, client=client)
+        raga._extra = extra
+        return raga
