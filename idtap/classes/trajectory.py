@@ -13,6 +13,7 @@ from .pitch import Pitch
 from .articulation import Articulation
 from .automation import Automation, get_starts
 from ..enums import Instrument
+from ..utils import split_unknown_keys, merge_extra_keys
 
 
 class VibObjType(TypedDict, total=False):
@@ -88,6 +89,18 @@ def _vib_bool(key: str, value) -> bool:
 
 
 class Trajectory:
+    # Keys this model understands. Constructor validation rejects anything else
+    # (to catch typos in hand-built trajectories); from_json instead keeps
+    # unknown wire keys verbatim in `_extra` and to_json re-emits them.
+    _KNOWN_KEYS = {
+        'id', 'pitches', 'dur_tot', 'dur_array', 'slope', 'vib_obj', 'instrumentation',
+        'articulations', 'num', 'name', 'fund_id12', 'vowel', 'vowel_ipa', 'vowel_hindi',
+        'vowel_eng_trans', 'start_consonant', 'start_consonant_hindi', 'start_consonant_ipa',
+        'start_consonant_eng_trans', 'end_consonant', 'end_consonant_hindi', 'end_consonant_ipa',
+        'end_consonant_eng_trans', 'group_id', 'automation', 'unique_id', 'tags', 'start_time',
+        'phrase_idx'
+    }
+
     def __init__(self, options: Optional[dict] = None) -> None:
         opts = humps.decamelize(options or {})
         
@@ -350,14 +363,7 @@ class Trajectory:
             return
             
         # Define allowed parameter names
-        allowed_keys = {
-            'id', 'pitches', 'dur_tot', 'dur_array', 'slope', 'vib_obj', 'instrumentation',
-            'articulations', 'num', 'name', 'fund_id12', 'vowel', 'vowel_ipa', 'vowel_hindi',
-            'vowel_eng_trans', 'start_consonant', 'start_consonant_hindi', 'start_consonant_ipa',
-            'start_consonant_eng_trans', 'end_consonant', 'end_consonant_hindi', 'end_consonant_ipa',
-            'end_consonant_eng_trans', 'group_id', 'automation', 'unique_id', 'tags', 'start_time',
-            'phrase_idx'
-        }
+        allowed_keys = Trajectory._KNOWN_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -809,7 +815,21 @@ class Trajectory:
         return 2 ** y
 
     # ---------------- consonant/vowel helpers -----------------------
+    def _refuse_if_tiered(self, what: str) -> None:
+        """PROP-8 (PROVISIONAL): on a phrase that carries a syllable tier the
+        legacy phonetic fields are the tier's projection; editing them here
+        would be overwritten on save. Piece marks such trajectories."""
+        phrase_uid = getattr(self, '_tier_phrase', None)
+        if phrase_uid is not None:
+            from ..syllables import TierEditError
+            raise TierEditError(
+                f"{what} on trajectory {self.unique_id}: phrase {phrase_uid} carries a "
+                f"syllable tier, which is the source of truth for vowels and consonants "
+                f"there. Edit that phrase's `syllables` (the syllable anchored at or "
+                f"before this trajectory) instead.")
+
     def remove_consonant(self, start: bool = True) -> None:
+        self._refuse_if_tiered('remove_consonant')
         if start:
             self.start_consonant = None
             self.start_consonant_hindi = None
@@ -828,6 +848,7 @@ class Trajectory:
                 del self.articulations['1.00']
 
     def add_consonant(self, consonant: str, start: bool = True) -> None:
+        self._refuse_if_tiered('add_consonant')
         idx = self.c_isos.index(consonant) if consonant in self.c_isos else -1
         hindi = self.c_hindis[idx] if idx != -1 else None
         ipa = self.c_ipas[idx] if idx != -1 else None
@@ -847,6 +868,7 @@ class Trajectory:
             self.articulations['1.00'] = art
 
     def change_consonant(self, consonant: str, start: bool = True) -> None:
+        self._refuse_if_tiered('change_consonant')
         idx = self.c_isos.index(consonant) if consonant in self.c_isos else -1
         hindi = self.c_hindis[idx] if idx != -1 else None
         ipa = self.c_ipas[idx] if idx != -1 else None
@@ -968,6 +990,7 @@ class Trajectory:
                 self.vowel_eng_trans = getattr(self, 'vowel_eng_trans', None) or self.v_eng_trans[idx]
 
     def update_vowel(self, v_iso: str) -> None:
+        self._refuse_if_tiered('update_vowel')
         if v_iso in self.v_isos:
             idx = self.v_isos.index(v_iso)
             self.vowel = v_iso
@@ -1026,7 +1049,8 @@ class Trajectory:
             # tags: stripped — defaults to [] on load (idtap-contract TRAJ-1)
         }
         # drop None values so they serialize as undefined (omitted) rather than null
-        return {k: v for k, v in data.items() if v is not None}
+        out = {k: v for k, v in data.items() if v is not None}
+        return merge_extra_keys(out, getattr(self, '_extra', None))
 
     def vib_obj_to_json(self) -> Dict[str, float]:
         """The v2 vibObj in wire form (camelCase keys, plain floats)."""
@@ -1042,6 +1066,9 @@ class Trajectory:
     @staticmethod
     def from_json(obj: Dict, ratios=None, fundamental=None) -> 'Trajectory':
         # Thread raga context down to each pitch (idtap-contract TRAJ-2).
+        # Unknown keys are split off from the RAW object (before decamelize,
+        # which would rewrite nested keys) and re-emitted by to_json.
+        obj, extra = split_unknown_keys(obj, Trajectory._KNOWN_KEYS)
         opts = humps.decamelize(obj)
         # Legacy server data may contain negative durations from old editor
         # bugs; the web editor never validated these, so repair rather than
@@ -1064,10 +1091,15 @@ class Trajectory:
         pitches = [Pitch.from_json(p, ratios=ratios, fundamental=fundamental)
                    for p in opts.get('pitches', [])]
         arts = {}
-        for k,v in opts.get('articulations', {}).items():
+        # raw (camelCase) articulations, so unknown keys survive verbatim
+        for k,v in (obj.get('articulations') or {}).items():
             if v is not None:
                 arts[k] = Articulation.from_json(v)
         automation = opts.get('automation')
+        raw_auto = obj.get('automation')
+        if isinstance(raw_auto, dict):
+            # from the raw (camelCase) object, so unknown keys survive
+            automation = Automation.from_json(raw_auto)
         instr = opts.get('instrumentation')
         if isinstance(instr, str):
             try:
@@ -1077,7 +1109,9 @@ class Trajectory:
         opts['pitches'] = pitches
         opts['articulations'] = arts
         opts['automation'] = automation
-        return Trajectory(opts)
+        traj = Trajectory(opts)
+        traj._extra = extra
+        return traj
 
     @staticmethod
     def names() -> List[str]:

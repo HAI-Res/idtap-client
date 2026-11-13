@@ -2,7 +2,10 @@
 
 __version__ = "0.1.58"
 
-from .client import SwaraClient
+from .client import SwaraClient, WriteGuardError
+from .constants import CONTRACT_VERSION
+from . import syllables
+from .syllables import TierEditError
 from .auth import login_google
 
 from .classes.articulation import Articulation
@@ -69,6 +72,10 @@ from .sequence_utils import (
 
 __all__ = [
     "SwaraClient",
+    "WriteGuardError",
+    "TierEditError",
+    "CONTRACT_VERSION",
+    "syllables",
     "Articulation",
     "Automation",
     "Assemblage",

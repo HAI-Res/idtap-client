@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import List, Dict, Optional, Any
+import copy
 import uuid
 import warnings
 
 import humps
-from ..utils import selective_decamelize
+from ..utils import selective_decamelize, split_unknown_keys, merge_extra_keys
 
 from .raga import Raga
 from .trajectory import Trajectory
@@ -66,11 +67,42 @@ def init_phrase_categorization() -> PhraseCatType:
 
 
 class Phrase:
+    # Keys this model understands (snake_case). Constructor validation rejects
+    # anything else, to catch typos in hand-built phrases; from_json keeps
+    # unknown wire keys verbatim in `_extra` and to_json re-emits them.
+    _KNOWN_KEYS = {
+        'trajectories', 'start_time', 'raga', 'instrumentation', 'trajectory_grid',
+        'chikari_grid', 'chikaris', 'groups_grid', 'categorization_grid',
+        'unique_id', 'piece_idx', 'ad_hoc_categorization_grid', 'dur_tot', 'dur_array',
+        'is_section_start', 'syllables'
+    }
+
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
-        opts = selective_decamelize(options or {})
-        
+        options = dict(options or {})
+        # The syllable tier is wire data owned by idtap.syllables: keep it out of
+        # the recursive decamelize (it would rewrite wordStart -> word_start).
+        syllables_in = options.pop('syllables', None)
+        opts = selective_decamelize(options)
+        if syllables_in is not None:
+            opts['syllables'] = syllables_in
+
         # Parameter validation
         self._validate_parameters(opts)
+        # PROP-8 syllable tier: a list of syllable dicts in wire form, or None
+        # when the phrase has no tier yet (absent == null == "not yet healed";
+        # [] == healed, no syllables). See idtap.syllables.
+        self._syllables: Optional[List[Dict[str, Any]]] = (
+            copy.deepcopy(list(syllables_in)) if syllables_in is not None else None)
+        # True while `syllables` holds a heal computed on load that is not part
+        # of the stored document yet (PROP-8 "tier disabled: preserve, never
+        # create"): it is written on save only when the piece has a `system`.
+        self._syllables_healed = False
+        # PROP-8 `syllable-malformed`: a stored value that is not a valid tier
+        # (not a list, or an entry without anchor.traj). Carried through
+        # verbatim, never healed or projected; see `malformed_syllables`.
+        self._syllables_malformed = False
+        self._malformed_raw: Any = None
+        self._extra: Dict[str, Any] = {}
         trajectories_in = opts.get('trajectories', [])
         self.start_time: Optional[float] = opts.get('start_time')
         self.raga: Optional[Raga] = opts.get('raga')
@@ -162,12 +194,7 @@ class Phrase:
             return
             
         # Define allowed parameter names
-        allowed_keys = {
-            'trajectories', 'start_time', 'raga', 'instrumentation', 'trajectory_grid',
-            'chikari_grid', 'chikaris', 'groups_grid', 'categorization_grid',
-            'unique_id', 'piece_idx', 'ad_hoc_categorization_grid', 'dur_tot', 'dur_array',
-            'is_section_start'
-        }
+        allowed_keys = Phrase._KNOWN_KEYS
         provided_keys = set(opts.keys())
         invalid_keys = provided_keys - allowed_keys
         
@@ -271,6 +298,14 @@ class Phrase:
         if 'is_section_start' in opts and opts['is_section_start'] is not None:
             if not isinstance(opts['is_section_start'], bool):
                 raise TypeError(f"Parameter 'is_section_start' must be a boolean, got {type(opts['is_section_start']).__name__}")
+
+        if 'syllables' in opts and opts['syllables'] is not None:
+            syls = opts['syllables']
+            if not isinstance(syls, list) or not all(isinstance(x, dict) for x in syls):
+                raise TypeError("Parameter 'syllables' must be a list of syllable dicts")
+            for i, x in enumerate(syls):
+                if not isinstance(x.get('anchor'), dict) or 'traj' not in x['anchor']:
+                    raise ValueError(f"syllables[{i}] has no anchor {{traj, t}}")
 
     def _validate_parameter_values(self, opts: Dict[str, Any]) -> None:
         """Validate that parameter values are in valid ranges."""
@@ -541,8 +576,16 @@ class Phrase:
             raise Exception('No trajectory found')
         return matches[0].num  # type: ignore
 
-    def to_json(self) -> Dict[str, Any]:
-        return {
+    def to_json(self, include_healed_syllables: bool = False) -> Dict[str, Any]:
+        """Serialize. `syllables` is emitted when the phrase carries a stored
+        tier; a tier only healed on load is emitted only with
+        `include_healed_syllables` (Piece.to_json passes it when the piece has
+        a `system`, PROP-8 "preserve, never create").
+
+        This does not project the tier onto the legacy trajectory fields;
+        Piece.to_json does that (dual-write), since a syllable can span a
+        phrase boundary."""
+        out = {
             'durTot': self.dur_tot,
             'durArray': self.dur_array,
             'chikaris': {k: c.to_json() for k, c in self.chikaris.items()},
@@ -556,9 +599,55 @@ class Phrase:
             'adHocCategorizationGrid': self.ad_hoc_categorization_grid,
             'isSectionStart': self.is_section_start,
         }
+        if self._syllables_malformed:
+            out['syllables'] = copy.deepcopy(self._malformed_raw)  # verbatim
+        elif self.syllables is not None and (include_healed_syllables or not self._syllables_healed):
+            out['syllables'] = [copy.deepcopy(s) for s in self.syllables]
+        return merge_extra_keys(out, self._extra)
+
+    @property
+    def syllables(self) -> Optional[List[Dict[str, Any]]]:
+        """The PROP-8 syllable tier (wire-form dicts), or None before a heal.
+        Assigning a list makes it part of the document: it is saved even when
+        the piece has no `system`."""
+        return self._syllables
+
+    @syllables.setter
+    def syllables(self, value: Optional[List[Dict[str, Any]]]) -> None:
+        self._syllables = list(value) if value is not None else None
+        self._syllables_healed = False
+        self._syllables_malformed, self._malformed_raw = False, None  # a repair
+        ref = getattr(self, '_piece_ref', None)
+        piece = ref() if ref is not None else None
+        if piece is not None:
+            piece._refresh_tier_marks()
+
+    @property
+    def malformed_syllables(self) -> Any:
+        """The stored `syllables` value when it is malformed (reported as
+        `syllable-malformed`, saved back unchanged), else None. While it is
+        set, `syllables` is None and the phrase is neither healed nor
+        projected; assigning `syllables` replaces it."""
+        return copy.deepcopy(self._malformed_raw) if self._syllables_malformed else None
+
+    def _set_healed_syllables(self, value: List[Dict[str, Any]]) -> None:
+        """Set a tier computed by the heal (kept in memory, not yet stored)."""
+        self._syllables = value
+        self._syllables_healed = True
+
+    @property
+    def has_stored_syllables(self) -> bool:
+        """True when the syllable tier came with the document (or was set or
+        adopted since), not just healed in memory."""
+        return self.syllables is not None and not self._syllables_healed
 
     @staticmethod
     def from_json(obj: Dict[str, Any], ratios=None, fundamental=None) -> 'Phrase':
+        # Unknown wire keys are split off the RAW object and re-emitted by
+        # to_json; `syllables` is taken raw too (null == absent, PROP-8).
+        obj, extra = split_unknown_keys(obj, Phrase._KNOWN_KEYS)
+        obj = dict(obj)
+        syllables_raw = obj.pop('syllables', None)
         opts = selective_decamelize(obj)
         # Legacy server data may contain negative durations from old editor
         # bugs; repair rather than reject (see Trajectory.from_json).
@@ -594,13 +683,14 @@ class Phrase:
         trajectories = opts.get('trajectories')
         if trajectories is not None:
             opts['trajectories'] = [Trajectory.from_json(t, ratios=r, fundamental=f) for t in trajectories]
-        chikaris = opts.get('chikaris')
+        # chikaris from the raw (camelCase) object, so unknown keys survive
+        chikaris = obj.get('chikaris')
         if chikaris is not None:
             new_c = {}
             for k, v in chikaris.items():
                 new_c[str(k)] = Chikari.from_json(v)
             opts['chikaris'] = new_c
-        chikari_grid = opts.get('chikari_grid')
+        chikari_grid = obj.get('chikariGrid', opts.get('chikari_grid'))
         if chikari_grid is not None:
             new_grid = []
             for cg in chikari_grid:
@@ -610,7 +700,16 @@ class Phrase:
                 new_grid.append(new_obj)
             opts['chikari_grid'] = new_grid
         # (raga already parsed above and threaded as context)
-        return Phrase(opts)
+        from ..syllables import syllables_malformed
+        malformed = syllables_malformed(syllables_raw)
+        if syllables_raw is not None and not malformed:
+            opts['syllables'] = copy.deepcopy(syllables_raw)
+        phrase = Phrase(opts)
+        phrase._extra = extra
+        if malformed:  # report, never raise on load (PROP-8 syllable-malformed)
+            phrase._syllables_malformed = True
+            phrase._malformed_raw = copy.deepcopy(syllables_raw)
+        return phrase
 
     def to_note_view_phrase(self) -> 'NoteViewPhrase':
         pitches: List[Pitch] = []

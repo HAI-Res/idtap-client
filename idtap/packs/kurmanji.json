@@ -1,0 +1,508 @@
+{
+  "id": "kurmanji",
+  "name": "Kurmanji Kurdish",
+  "packVersion": "0.1.0",
+  "status": "draft: pending review by Seba Kayan",
+  "keyScheme": "Kurmanji Latin (Hawar) letters. Thackston's underlined letters, which the spelling does not distinguish, are written with U+0331 COMBINING MACRON BELOW (p̱ ṯ ḵ ç̱ x̱); pharyngeal h is ḥ; the trill is rr; 'ayn is ʿ.",
+  "scripts": [
+    "Latn"
+  ],
+  "sources": [
+    "Seba Kayan, 'Kurmanji Kurdish: Vowels and Consonants' (overview for IDTAP, 2026-11-11)",
+    "Thackston, W. M. (2006). Kurmanji Kurdish: A Reference Grammar with Selected Readings, pp. 1-6",
+    "Haig, G. and Öpengin, E. (2015 draft). Kurmanji Kurdish in Turkey: Structure, Varieties, and Status, pp. 11-13"
+  ],
+  "notes": [
+    "Syllable = onset (one or more consonants, e.g. xw) + vowel + optional coda. Clusters are arrays of keys on the syllable.",
+    "Context variants are realizations, not separate phonemes: the syllable stores the letter; a variant is something `sung` may record.",
+    "Test piece: Dengbêj Gazîn, 'Her wayê wayê wayê' (Çakır ed. 2026, song record 152).",
+    "Arabic-script (Kurdish) display forms are not given yet.",
+    "No `legacy` blocks (Jon, 2026-11-12): every platform moves to the syllable tier together, so a non-Hindi piece projects nothing into the pre-0.3.0 per-trajectory fields. The write guard is the only protection against a pre-0.3.0 save."
+  ],
+  "unverified": [
+    "consonants.w.variants: the [ɯ] glide before front vowels",
+    "consonants.x / x̱: velar [x ɣ] versus uvular [χ ʁ]",
+    "vowels.u.variants: [ɯɛ] after g, k"
+  ],
+  "flags": {
+    "syllabicNasals": false,
+    "onsetClusters": true,
+    "codaClusters": true,
+    "tones": false,
+    "nucleusOptional": false,
+    "legacyExact": false
+  },
+  "consonants": {
+    "b": {
+      "ipa": "b",
+      "place": "labial",
+      "manner": "stop",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "b"
+      }
+    },
+    "c": {
+      "ipa": "d͡ʒ",
+      "place": "postalveolar",
+      "manner": "affricate",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "c"
+      }
+    },
+    "ç": {
+      "ipa": "t͡ʃʰ",
+      "place": "postalveolar",
+      "manner": "affricate",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "ç"
+      }
+    },
+    "ç̱": {
+      "ipa": "t͡ʃˤ",
+      "place": "postalveolar",
+      "manner": "affricate",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "ç̱"
+      },
+      "pharyngealized": true,
+      "note": "Thackston's underlined ç: unaspirated, pharyngealized; not maintained by all speakers (p. 4)."
+    },
+    "d": {
+      "ipa": "d",
+      "place": "alveolar",
+      "manner": "stop",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "d"
+      }
+    },
+    "f": {
+      "ipa": "f",
+      "place": "labiodental",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "f"
+      }
+    },
+    "g": {
+      "ipa": "g",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "g"
+      }
+    },
+    "h": {
+      "ipa": "h",
+      "place": "glottal",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "h"
+      }
+    },
+    "ḥ": {
+      "ipa": "ħ",
+      "place": "pharyngeal",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "ḥ"
+      },
+      "note": "Thackston's underlined h; elsewhere not distinguished from h."
+    },
+    "j": {
+      "ipa": "ʒ",
+      "place": "postalveolar",
+      "manner": "fricative",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "j"
+      }
+    },
+    "k": {
+      "ipa": "kʰ",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "k"
+      }
+    },
+    "ḵ": {
+      "ipa": "kˤ",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "ḵ"
+      },
+      "pharyngealized": true,
+      "note": "Thackston's underlined k: unaspirated, pharyngealized; not maintained by all speakers."
+    },
+    "l": {
+      "ipa": "l",
+      "place": "alveolar",
+      "manner": "lateral",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "l"
+      }
+    },
+    "m": {
+      "ipa": "m",
+      "place": "labial",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "m"
+      }
+    },
+    "n": {
+      "ipa": "n",
+      "place": "alveolar",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "n"
+      }
+    },
+    "p": {
+      "ipa": "pʰ",
+      "place": "labial",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "p"
+      }
+    },
+    "p̱": {
+      "ipa": "pˤ",
+      "place": "labial",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "p̱"
+      },
+      "pharyngealized": true,
+      "note": "Thackston's underlined p: unaspirated, pharyngealized; not maintained by all speakers."
+    },
+    "q": {
+      "ipa": "q",
+      "place": "uvular",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "q"
+      }
+    },
+    "r": {
+      "ipa": "ɾ",
+      "place": "alveolar",
+      "manner": "flap",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "r"
+      },
+      "note": "Flap; does not occur word-initially."
+    },
+    "rr": {
+      "ipa": "r",
+      "place": "alveolar",
+      "manner": "trill",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "rr"
+      },
+      "note": "Trill; every initial r is trilled. Spelled rr only sporadically (pirr); a transcriber writes rr wherever a trill is heard."
+    },
+    "s": {
+      "ipa": "s",
+      "place": "alveolar",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "s"
+      }
+    },
+    "ş": {
+      "ipa": "ʃ",
+      "place": "postalveolar",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "ş"
+      }
+    },
+    "t": {
+      "ipa": "tʰ",
+      "place": "alveolar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "t"
+      }
+    },
+    "ṯ": {
+      "ipa": "tˤ",
+      "place": "alveolar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "ṯ"
+      },
+      "pharyngealized": true,
+      "note": "Thackston's underlined t: unaspirated, pharyngealized; not maintained by all speakers."
+    },
+    "v": {
+      "ipa": "v",
+      "place": "labiodental",
+      "manner": "fricative",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "v"
+      }
+    },
+    "w": {
+      "ipa": "w",
+      "place": "labiovelar",
+      "manner": "approximant",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "w"
+      },
+      "variants": [
+        {
+          "ipa": "ɯ",
+          "context": "before i, î, ê (Thackston)",
+          "unverified": true,
+          "note": "[ɯ] is a vowel symbol; the glide would be [ɰ] or non-syllabic [ɯ]. Thackston's French comparison (cuire, huit) points to [ɥ], a rounded glide."
+        }
+      ]
+    },
+    "x": {
+      "ipa": "x",
+      "place": "velar",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "x"
+      },
+      "variants": [
+        {
+          "ipa": "χ",
+          "context": "uvular realization",
+          "unverified": true,
+          "note": "Thackston calls x uvular but writes the velar symbol; not yet verified for Gazîn's recording."
+        }
+      ]
+    },
+    "x̱": {
+      "ipa": "ɣ",
+      "place": "velar",
+      "manner": "fricative",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "x̱"
+      },
+      "note": "Thackston's underlined x, the voiced counterpart of x (Arabic ghayn).",
+      "variants": [
+        {
+          "ipa": "ʁ",
+          "context": "uvular realization",
+          "unverified": true,
+          "note": "As for x: velar or uvular not yet verified."
+        }
+      ]
+    },
+    "y": {
+      "ipa": "j",
+      "place": "palatal",
+      "manner": "approximant",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "y"
+      }
+    },
+    "z": {
+      "ipa": "z",
+      "place": "alveolar",
+      "manner": "fricative",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "z"
+      }
+    },
+    "ʿ": {
+      "ipa": "ʕ",
+      "place": "pharyngeal",
+      "manner": "fricative",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "ʿ"
+      },
+      "note": "Not part of the orthography; marks Arabic 'ayn in Thackston's vocabulary."
+    }
+  },
+  "codas": "consonants",
+  "vowels": {
+    "î": {
+      "ipa": "i",
+      "height": "close",
+      "backness": "front",
+      "rounded": false,
+      "length": "long",
+      "display": {
+        "Latn": "î"
+      },
+      "example": "nîv [niv] half"
+    },
+    "i": {
+      "ipa": "ɪ",
+      "height": "near-close",
+      "backness": "front",
+      "rounded": false,
+      "length": "short",
+      "display": {
+        "Latn": "i"
+      },
+      "example": "dil [dɪl] heart",
+      "variants": [
+        {
+          "ipa": "ɨ",
+          "context": "often in closed syllables ending in m",
+          "example": "vedixwim [ˈvædɪxwɨm] I drink"
+        }
+      ]
+    },
+    "ê": {
+      "ipa": "e",
+      "height": "close-mid",
+      "backness": "front",
+      "rounded": false,
+      "length": "long",
+      "display": {
+        "Latn": "ê"
+      },
+      "example": "hêz [hez] power"
+    },
+    "e": {
+      "ipa": "æ",
+      "height": "near-open",
+      "backness": "front",
+      "rounded": false,
+      "length": "short",
+      "display": {
+        "Latn": "e"
+      },
+      "example": "berhem [bæɾˈhæm] product",
+      "variants": [
+        {
+          "ipa": "ə",
+          "context": "in the sequence ew",
+          "example": "ew [əw] that"
+        },
+        {
+          "ipa": "ɛ",
+          "context": "followed by y in another syllable",
+          "example": "odeya [oˈdɛjɑ] room"
+        },
+        {
+          "ipa": "ɛ",
+          "context": "after the stress, particularly word-finally",
+          "example": "miróvek [mɪˈrovɛk] a man"
+        }
+      ],
+      "note": "Thackston takes [æ] as the reference pronunciation; many speakers are closer to [ɛ]."
+    },
+    "û": {
+      "ipa": "u",
+      "height": "close",
+      "backness": "back",
+      "rounded": true,
+      "length": "long",
+      "display": {
+        "Latn": "û"
+      },
+      "example": "bûn [bun] to be"
+    },
+    "u": {
+      "ipa": "ʊ",
+      "height": "near-close",
+      "backness": "back",
+      "rounded": true,
+      "length": "short",
+      "display": {
+        "Latn": "u"
+      },
+      "example": "du [dʊ] two",
+      "variants": [
+        {
+          "ipa": "ɯɛ",
+          "context": "after g and k for some speakers, particularly in closed syllables",
+          "example": "gur [gɯɛɾ] or [gʊɾ] wolf",
+          "unverified": true
+        }
+      ]
+    },
+    "o": {
+      "ipa": "o",
+      "height": "close-mid",
+      "backness": "back",
+      "rounded": true,
+      "length": "long",
+      "display": {
+        "Latn": "o"
+      },
+      "example": "nod [nod] ninety"
+    },
+    "a": {
+      "ipa": "ɑ",
+      "height": "open",
+      "backness": "back",
+      "rounded": false,
+      "length": "long",
+      "display": {
+        "Latn": "a"
+      },
+      "example": "bav [bɑv] father"
+    }
+  }
+}

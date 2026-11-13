@@ -8,3 +8,4 @@ recursive-include idtap *.typed
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
 exclude idtap.egg-info
+recursive-include idtap/packs *.json

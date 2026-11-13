@@ -20,6 +20,29 @@ from .query_types import (
     DesignatorType, SegmentationType, QueryAnswerType
 )
 from .classes.pitch import Pitch
+from .constants import CLIENT_HEADER, CLIENT_HEADER_VALUE
+
+
+class WriteGuardError(requests.HTTPError):
+    """The server refused a save under the idtap-contract write guard (PROP-8).
+
+    HTTP 409 ``{"error": "write-guard", "reasons": [...], "minContract": "0.3.0"}``:
+    the stored transcription carries data (a syllable tier, a non-Hindi phoneme
+    pack, ...) that the sending client's contract version cannot keep, so the
+    save would delete it. Not retried. Your local Piece is unchanged; save it
+    with a client implementing at least ``min_contract`` (upgrade idtap).
+    """
+
+    def __init__(self, reasons: List[str], min_contract: Optional[str],
+                 response: Optional[requests.Response] = None) -> None:
+        self.reasons = list(reasons)
+        self.min_contract = min_contract
+        msg = (f"save refused by the server's write guard (HTTP 409): this client "
+               f"sends {CLIENT_HEADER}: {CLIENT_HEADER_VALUE}, the stored transcription "
+               f"needs contract {min_contract or '?'} or newer to be saved without loss; "
+               f"reasons: {', '.join(self.reasons) or '(none given)'}. Nothing was "
+               f"written; your local edits are kept.")
+        super().__init__(msg, response=response)
 
 
 class SwaraClient:
@@ -117,9 +140,13 @@ class SwaraClient:
         }
 
     def _auth_headers(self) -> Dict[str, str]:
+        """Headers for every request: the bearer token and the contract
+        version this client implements (PROP-8 write guard; a request without
+        it counts as a pre-0.3.0 client)."""
+        headers = {CLIENT_HEADER: CLIENT_HEADER_VALUE}
         if self.token:
-            return {"Authorization": f"Bearer {self.token}"}
-        return {}
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
 
     def _try_refresh(self) -> bool:
         """Renew the id_token via the stored refresh token. Returns True on success."""
@@ -152,8 +179,23 @@ class SwaraClient:
             response = requests.request(
                 method, url, headers=self._auth_headers(), timeout=1800, **kwargs
             )
+        if response.status_code == 409:
+            self._raise_if_write_guard(response)
         response.raise_for_status()
         return response
+
+    @staticmethod
+    def _raise_if_write_guard(response: requests.Response) -> None:
+        """Turn a write-guard refusal into WriteGuardError (never retried)."""
+        try:
+            body = response.json()
+        except ValueError:
+            return
+        if isinstance(body, dict) and body.get("error") == "write-guard":
+            reasons = body.get("reasons") or []
+            raise WriteGuardError(
+                [str(r) for r in reasons] if isinstance(reasons, list) else [str(reasons)],
+                body.get("minContract"), response=response)
 
     def _post_json(self, endpoint: str, payload: Dict[str, Any]) -> Any:
         response = self._request("post", endpoint, json=payload)

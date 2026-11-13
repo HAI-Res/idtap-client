@@ -229,6 +229,34 @@ from idtap import login_google
 login_google()
 ```
 
+## Syllables, transcription systems and phoneme packs (contract 0.3.0)
+
+From idtap-contract 0.3.0 a transcription can carry:
+
+- `piece.system`: the transcription system, e.g. `{"phonology": "jyutping"}`. `None` means
+  Hindustani (`piece.resolved_system` fills in the defaults).
+- `piece.lyrics_text`: the source text per track, for reference only.
+- `phrase.syllables`: the syllable tier, a list of syllable dicts in wire form
+  (`anchor`, `onset`, `nucleus`, `coda`, `tone`, `lyric`, ...). See
+  `idtap-contract/schemas/syllable.schema.json`.
+
+When a piece loads, phrases without a tier are healed from the legacy per-trajectory
+vowel and consonant fields. When it saves, the tier is projected back onto those fields
+(dual-write). A healed tier is written only when the piece has a `system`, or after
+`piece.adopt_healed_syllables()`. A stored tier is always written back unchanged. On a
+phrase that carries a tier, the tier is the source of truth: edit `phrase.syllables`,
+not `trajectory.vowel`. `piece.syllable_violations()` lists the load-time invariants.
+`idtap.syllables` holds the rules (heal, projection, re-homing, write guard) and the
+bundled phoneme packs (`load_pack("hindi-urdu" | "jyutping" | "kurmanji")`,
+`derive_ipa`, `derived_tone`).
+
+Every request sends `X-IDTAP-Client: python/0.3.0`. If the server refuses a save
+because the stored piece holds data an older client would destroy, the save raises
+`idtap.WriteGuardError` with `.reasons`. Nothing is retried, and your local `Piece`
+is unchanged.
+
+Unknown keys in a transcription are kept and saved back unchanged.
+
 ## Advanced Usage
 
 ### Batch Processing

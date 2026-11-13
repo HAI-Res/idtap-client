@@ -1,0 +1,757 @@
+{
+  "id": "jyutping",
+  "name": "Cantonese (Jyutping)",
+  "packVersion": "0.1.0",
+  "status": "draft: pending review by Yingyao Yu",
+  "keyScheme": "LSHK Jyutping letters. A syllable stores onset, nucleus and coda as Jyutping letters and tone as its digit; IPA is derived from `finals`, never stored.",
+  "scripts": [
+    "Latn",
+    "Hant"
+  ],
+  "sources": [
+    "Yingyao Yu's Jyutping inventory for IDTAP (19 onsets + null; nuclei aa a e eo i o oe u yu; codas -i -u -m -n -ng -p -t -k; 60 finals; 6 tones; syllabic m and ng)",
+    "https://jyutping.org/en/jyutping/ (finals chart section 3.3, tone table), read 2026-11-12",
+    "https://en.wikipedia.org/wiki/Jyutping (finals grid, colloquial footnotes), read 2026-11-12"
+  ],
+  "notes": [
+    "Finals are enumerated, not nucleus x coda: the nucleus quality depends on the coda (i before ng/k is [e], u before ng/k is [o], o before u is [o], e before i is [e]).",
+    "Finals IPA follows jyutping.org's chart. Wikipedia writes ing/ik as [ɪŋ ɪk] and ung/uk as [ʊŋ ʊk]; both are common transcriptions of the same sounds.",
+    "Orthography (characters) is free text on the syllable: no validation or lookup in 0.3.0.",
+    "No `legacy` blocks (Jon, 2026-11-12): every platform moves to the syllable tier together, so a non-Hindi piece projects nothing into the pre-0.3.0 per-trajectory fields. The write guard is the only protection against a pre-0.3.0 save."
+  ],
+  "unverified": [
+    "finals: Yingyao's inventory counts 60 finals; jyutping.org and Wikipedia give 57 + syllabic m, ng = 59. Candidates for the 60th: bare eo (jyutping.org section 3.1 lists 'eo [ɵ]'), en, um, up (chart labels with no example character).",
+    "tones.*.chao: Yingyao gives 55 25 33 21 23 22; jyutping.org gives 55 35 33 21 13 22 (tones 2 and 5 differ in starting height). `chao` holds Yingyao's values, `chaoAlt` jyutping.org's."
+  ],
+  "flags": {
+    "syllabicNasals": true,
+    "onsetClusters": false,
+    "codaClusters": false,
+    "tones": true,
+    "nucleusOptional": false,
+    "legacyExact": false
+  },
+  "consonants": {
+    "b": {
+      "ipa": "p",
+      "place": "labial",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "b"
+      }
+    },
+    "p": {
+      "ipa": "pʰ",
+      "place": "labial",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "p"
+      }
+    },
+    "m": {
+      "ipa": "m",
+      "place": "labial",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "m"
+      }
+    },
+    "f": {
+      "ipa": "f",
+      "place": "labiodental",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "f"
+      }
+    },
+    "d": {
+      "ipa": "t",
+      "place": "alveolar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "d"
+      }
+    },
+    "t": {
+      "ipa": "tʰ",
+      "place": "alveolar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "t"
+      }
+    },
+    "n": {
+      "ipa": "n",
+      "place": "alveolar",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "n"
+      }
+    },
+    "l": {
+      "ipa": "l",
+      "place": "alveolar",
+      "manner": "lateral",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "l"
+      }
+    },
+    "g": {
+      "ipa": "k",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "g"
+      }
+    },
+    "k": {
+      "ipa": "kʰ",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "k"
+      }
+    },
+    "ng": {
+      "ipa": "ŋ",
+      "place": "velar",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "ng"
+      }
+    },
+    "h": {
+      "ipa": "h",
+      "place": "glottal",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "h"
+      }
+    },
+    "gw": {
+      "ipa": "kʷ",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "gw"
+      },
+      "labialized": true
+    },
+    "kw": {
+      "ipa": "kʷʰ",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "kw"
+      },
+      "labialized": true
+    },
+    "w": {
+      "ipa": "w",
+      "place": "labiovelar",
+      "manner": "approximant",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "w"
+      }
+    },
+    "z": {
+      "ipa": "t͡s",
+      "place": "alveolar",
+      "manner": "affricate",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "z"
+      }
+    },
+    "c": {
+      "ipa": "t͡sʰ",
+      "place": "alveolar",
+      "manner": "affricate",
+      "voiced": false,
+      "aspirated": true,
+      "display": {
+        "Latn": "c"
+      }
+    },
+    "s": {
+      "ipa": "s",
+      "place": "alveolar",
+      "manner": "fricative",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "s"
+      }
+    },
+    "j": {
+      "ipa": "j",
+      "place": "palatal",
+      "manner": "approximant",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "j"
+      }
+    }
+  },
+  "codas": {
+    "i": {
+      "ipa": "i̯",
+      "place": "palatal",
+      "manner": "approximant",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "i"
+      }
+    },
+    "u": {
+      "ipa": "u̯",
+      "place": "labiovelar",
+      "manner": "approximant",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "u"
+      }
+    },
+    "m": {
+      "ipa": "m",
+      "place": "labial",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "m"
+      }
+    },
+    "n": {
+      "ipa": "n",
+      "place": "alveolar",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "n"
+      }
+    },
+    "ng": {
+      "ipa": "ŋ",
+      "place": "velar",
+      "manner": "nasal",
+      "voiced": true,
+      "aspirated": false,
+      "display": {
+        "Latn": "ng"
+      }
+    },
+    "p": {
+      "ipa": "p̚",
+      "place": "labial",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "p"
+      }
+    },
+    "t": {
+      "ipa": "t̚",
+      "place": "alveolar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "t"
+      }
+    },
+    "k": {
+      "ipa": "k̚",
+      "place": "velar",
+      "manner": "stop",
+      "voiced": false,
+      "aspirated": false,
+      "display": {
+        "Latn": "k"
+      }
+    }
+  },
+  "vowels": {
+    "aa": {
+      "ipa": "aː",
+      "height": "open",
+      "backness": "central",
+      "rounded": false,
+      "length": "long",
+      "display": {
+        "Latn": "aa"
+      }
+    },
+    "a": {
+      "ipa": "ɐ",
+      "height": "near-open",
+      "backness": "central",
+      "rounded": false,
+      "length": "short",
+      "display": {
+        "Latn": "a"
+      }
+    },
+    "e": {
+      "ipa": "ɛː",
+      "height": "open-mid",
+      "backness": "front",
+      "rounded": false,
+      "length": "long",
+      "display": {
+        "Latn": "e"
+      }
+    },
+    "i": {
+      "ipa": "iː",
+      "height": "close",
+      "backness": "front",
+      "rounded": false,
+      "length": "long",
+      "display": {
+        "Latn": "i"
+      }
+    },
+    "o": {
+      "ipa": "ɔː",
+      "height": "open-mid",
+      "backness": "back",
+      "rounded": true,
+      "length": "long",
+      "display": {
+        "Latn": "o"
+      }
+    },
+    "u": {
+      "ipa": "uː",
+      "height": "close",
+      "backness": "back",
+      "rounded": true,
+      "length": "long",
+      "display": {
+        "Latn": "u"
+      }
+    },
+    "eo": {
+      "ipa": "ɵ",
+      "height": "close-mid",
+      "backness": "central",
+      "rounded": true,
+      "length": "short",
+      "display": {
+        "Latn": "eo"
+      }
+    },
+    "oe": {
+      "ipa": "œː",
+      "height": "open-mid",
+      "backness": "front",
+      "rounded": true,
+      "length": "long",
+      "display": {
+        "Latn": "oe"
+      }
+    },
+    "yu": {
+      "ipa": "yː",
+      "height": "close",
+      "backness": "front",
+      "rounded": true,
+      "length": "long",
+      "display": {
+        "Latn": "yu"
+      }
+    }
+  },
+  "finals": {
+    "aa": {
+      "nucleus": "aa",
+      "coda": null,
+      "ipa": "aː"
+    },
+    "aai": {
+      "nucleus": "aa",
+      "coda": "i",
+      "ipa": "aːi̯"
+    },
+    "aau": {
+      "nucleus": "aa",
+      "coda": "u",
+      "ipa": "aːu̯"
+    },
+    "aam": {
+      "nucleus": "aa",
+      "coda": "m",
+      "ipa": "aːm"
+    },
+    "aan": {
+      "nucleus": "aa",
+      "coda": "n",
+      "ipa": "aːn"
+    },
+    "aang": {
+      "nucleus": "aa",
+      "coda": "ng",
+      "ipa": "aːŋ"
+    },
+    "aap": {
+      "nucleus": "aa",
+      "coda": "p",
+      "ipa": "aːp̚"
+    },
+    "aat": {
+      "nucleus": "aa",
+      "coda": "t",
+      "ipa": "aːt̚"
+    },
+    "aak": {
+      "nucleus": "aa",
+      "coda": "k",
+      "ipa": "aːk̚"
+    },
+    "a": {
+      "nucleus": "a",
+      "coda": null,
+      "ipa": "ɐ",
+      "note": "elided casual speech only (sei3 a6 sei3); added to Jyutping 2018"
+    },
+    "ai": {
+      "nucleus": "a",
+      "coda": "i",
+      "ipa": "ɐi̯"
+    },
+    "au": {
+      "nucleus": "a",
+      "coda": "u",
+      "ipa": "ɐu̯"
+    },
+    "am": {
+      "nucleus": "a",
+      "coda": "m",
+      "ipa": "ɐm"
+    },
+    "an": {
+      "nucleus": "a",
+      "coda": "n",
+      "ipa": "ɐn"
+    },
+    "ang": {
+      "nucleus": "a",
+      "coda": "ng",
+      "ipa": "ɐŋ"
+    },
+    "ap": {
+      "nucleus": "a",
+      "coda": "p",
+      "ipa": "ɐp̚"
+    },
+    "at": {
+      "nucleus": "a",
+      "coda": "t",
+      "ipa": "ɐt̚"
+    },
+    "ak": {
+      "nucleus": "a",
+      "coda": "k",
+      "ipa": "ɐk̚"
+    },
+    "e": {
+      "nucleus": "e",
+      "coda": null,
+      "ipa": "ɛː"
+    },
+    "ei": {
+      "nucleus": "e",
+      "coda": "i",
+      "ipa": "ei̯"
+    },
+    "eu": {
+      "nucleus": "e",
+      "coda": "u",
+      "ipa": "ɛːu̯",
+      "note": "colloquial (deu6 掉)"
+    },
+    "em": {
+      "nucleus": "e",
+      "coda": "m",
+      "ipa": "ɛːm",
+      "note": "colloquial (lem2 舐)"
+    },
+    "eng": {
+      "nucleus": "e",
+      "coda": "ng",
+      "ipa": "ɛːŋ"
+    },
+    "ep": {
+      "nucleus": "e",
+      "coda": "p",
+      "ipa": "ɛːp̚",
+      "note": "colloquial (gep6 夾)"
+    },
+    "et": {
+      "nucleus": "e",
+      "coda": "t",
+      "ipa": "ɛːt̚"
+    },
+    "ek": {
+      "nucleus": "e",
+      "coda": "k",
+      "ipa": "ɛːk̚"
+    },
+    "i": {
+      "nucleus": "i",
+      "coda": null,
+      "ipa": "iː"
+    },
+    "iu": {
+      "nucleus": "i",
+      "coda": "u",
+      "ipa": "iːu̯"
+    },
+    "im": {
+      "nucleus": "i",
+      "coda": "m",
+      "ipa": "iːm"
+    },
+    "in": {
+      "nucleus": "i",
+      "coda": "n",
+      "ipa": "iːn"
+    },
+    "ing": {
+      "nucleus": "i",
+      "coda": "ng",
+      "ipa": "eŋ"
+    },
+    "ip": {
+      "nucleus": "i",
+      "coda": "p",
+      "ipa": "iːp̚"
+    },
+    "it": {
+      "nucleus": "i",
+      "coda": "t",
+      "ipa": "iːt̚"
+    },
+    "ik": {
+      "nucleus": "i",
+      "coda": "k",
+      "ipa": "ek̚"
+    },
+    "o": {
+      "nucleus": "o",
+      "coda": null,
+      "ipa": "ɔː"
+    },
+    "oi": {
+      "nucleus": "o",
+      "coda": "i",
+      "ipa": "ɔːy̯"
+    },
+    "ou": {
+      "nucleus": "o",
+      "coda": "u",
+      "ipa": "ou̯"
+    },
+    "on": {
+      "nucleus": "o",
+      "coda": "n",
+      "ipa": "ɔːn"
+    },
+    "ong": {
+      "nucleus": "o",
+      "coda": "ng",
+      "ipa": "ɔːŋ"
+    },
+    "ot": {
+      "nucleus": "o",
+      "coda": "t",
+      "ipa": "ɔːt̚"
+    },
+    "ok": {
+      "nucleus": "o",
+      "coda": "k",
+      "ipa": "ɔːk̚"
+    },
+    "u": {
+      "nucleus": "u",
+      "coda": null,
+      "ipa": "uː"
+    },
+    "ui": {
+      "nucleus": "u",
+      "coda": "i",
+      "ipa": "uːy̯"
+    },
+    "un": {
+      "nucleus": "u",
+      "coda": "n",
+      "ipa": "uːn"
+    },
+    "ung": {
+      "nucleus": "u",
+      "coda": "ng",
+      "ipa": "oŋ"
+    },
+    "ut": {
+      "nucleus": "u",
+      "coda": "t",
+      "ipa": "uːt̚"
+    },
+    "uk": {
+      "nucleus": "u",
+      "coda": "k",
+      "ipa": "ok̚"
+    },
+    "eoi": {
+      "nucleus": "eo",
+      "coda": "i",
+      "ipa": "ɵy̯"
+    },
+    "eon": {
+      "nucleus": "eo",
+      "coda": "n",
+      "ipa": "ɵn"
+    },
+    "eot": {
+      "nucleus": "eo",
+      "coda": "t",
+      "ipa": "ɵt̚"
+    },
+    "oe": {
+      "nucleus": "oe",
+      "coda": null,
+      "ipa": "œː"
+    },
+    "oeng": {
+      "nucleus": "oe",
+      "coda": "ng",
+      "ipa": "œːŋ"
+    },
+    "oet": {
+      "nucleus": "oe",
+      "coda": "t",
+      "ipa": "œːt̚",
+      "note": "onomatopoeia only (oet6, goet4); added 2018"
+    },
+    "oek": {
+      "nucleus": "oe",
+      "coda": "k",
+      "ipa": "œːk̚"
+    },
+    "yu": {
+      "nucleus": "yu",
+      "coda": null,
+      "ipa": "yː"
+    },
+    "yun": {
+      "nucleus": "yu",
+      "coda": "n",
+      "ipa": "yːn"
+    },
+    "yut": {
+      "nucleus": "yu",
+      "coda": "t",
+      "ipa": "yːt̚"
+    },
+    "m": {
+      "nucleus": null,
+      "coda": "m",
+      "ipa": "m̩",
+      "syllabic": true
+    },
+    "ng": {
+      "nucleus": null,
+      "coda": "ng",
+      "ipa": "ŋ̍",
+      "syllabic": true
+    }
+  },
+  "tones": {
+    "1": {
+      "chao": "55",
+      "chaoAlt": "55",
+      "name": "high level",
+      "checkedChao": "5"
+    },
+    "2": {
+      "chao": "25",
+      "chaoAlt": "35",
+      "name": "mid rising"
+    },
+    "3": {
+      "chao": "33",
+      "chaoAlt": "33",
+      "name": "mid level",
+      "checkedChao": "3"
+    },
+    "4": {
+      "chao": "21",
+      "chaoAlt": "21",
+      "name": "low falling"
+    },
+    "5": {
+      "chao": "23",
+      "chaoAlt": "13",
+      "name": "low rising"
+    },
+    "6": {
+      "chao": "22",
+      "chaoAlt": "22",
+      "name": "low level",
+      "checkedChao": "2"
+    }
+  },
+  "toneSystems": {
+    "nine": {
+      "description": "The traditional nine-tone count (ILE). Stored tone stays 1-6 (Jyutping); the nine-tone number is derived from (tone, coda): on a checked syllable (coda p, t or k) tones 1, 3, 6 are 7, 8, 9. Lossless both ways. A checked syllable with any other tone (a colloquial changed tone, e.g. 2) keeps its number.",
+      "checkedCodas": [
+        "p",
+        "t",
+        "k"
+      ],
+      "checked": {
+        "1": "7",
+        "3": "8",
+        "6": "9"
+      }
+    }
+  },
+  "toneNotes": "Checked (entering) syllables, finals in -p -t -k, take tones 1, 3, 6 in Jyutping (ILE 7, 8, 9); `checkedChao` is their short contour. Tone is a label on the syllable in 0.3.0; contours are reference shapes for later overlay and query work."
+}

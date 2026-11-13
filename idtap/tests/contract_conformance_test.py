@@ -26,9 +26,9 @@ from idtap.classes.piece import Piece
 # The contract's versionPolicy: each implementation pins the contract version it
 # was built against and asserts exact equality with contract.json in its
 # conformance suite. A minor bump means wire semantics changed (e.g. 0.2.0 =
-# PROP-6 vibrato v2) and this client needs the matching heal before it may load
-# newer data.
-CONTRACT_VERSION = "0.2.0"
+# PROP-6 vibrato v2, 0.3.0 = PROP-7/8/9 system, syllable tier, packs) and this
+# client needs the matching heal before it may load newer data.
+CONTRACT_VERSION = "0.3.0"
 
 
 def _contract_dir():
@@ -307,3 +307,178 @@ def test_meter_conformance(path):
         inst = fx["instance"]
         for k in fx["expected"]["requiredKeys"]:
             assert k in inst
+
+
+# =========================================================================== 0.3.0
+# PROP-7 system, PROP-8 syllable tier, PROP-9 packs. The adapter follows
+# conformance/README.md "Syllable tier, system, packs"; the rules under test
+# live in idtap.syllables (a port of conformance/syllables.py) and in Piece.
+import copy
+import warnings
+
+from idtap import syllables as SYL
+
+SYLLABLE_FIXTURES = _fixtures("syllable")
+SYSTEM_FIXTURES = _fixtures("system")
+
+
+def _load_piece(pj):
+    """Load as a client does; invariant warnings are asserted, not shown."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        piece = Piece.from_json(copy.deepcopy(pj))
+    piece._fixture_uids = {t.get("uniqueId") for tr in pj["phraseGrid"]
+                           for _, _, t in SYL.track_flat(tr)}
+    return piece
+
+
+def _grid(piece):
+    return [[ph.syllables for ph in row] for row in piece.phrase_grid]
+
+
+_EMPTY_LEGACY = {"art0": None, "art1": None}
+
+
+def _saved_legacy(piece):
+    """The legacy fields (nine wire fields + '0.00'/'1.00' consonant
+    articulations) of every row-0 trajectory, as this client saves them.
+    Trajectories the Python loader adds itself (e.g. a silent filler from
+    string sync) must carry no legacy fields and are left out."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        out = SYL.stored_legacy(piece.to_json())
+    known = getattr(piece, "_fixture_uids", None)
+    if known is None:
+        return out
+    for uid in set(out) - known:
+        assert out.pop(uid) == _EMPTY_LEGACY, f"added trajectory {uid} carries legacy fields"
+    return out
+
+
+def _split(piece):
+    return SYL.split_violations(piece.syllable_violations())
+
+
+def _all_syllables(piece):
+    return [s for row in piece.phrase_grid for ph in row for s in ph.syllables or []]
+
+
+@pytest.mark.parametrize("path", SYLLABLE_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_syllable_conformance(path):
+    fx = _load(path)
+    kind, exp = fx["kind"], fx.get("expected")
+    if kind == "invariants":
+        for c in fx["cases"]:
+            got = _split(_load_piece(c["pieceJson"]))
+            want = (c["expected"]["violations"], c["expected"].get("warnings", []))
+            assert got == want, f"{c['name']}: {got} != {want}"
+        return
+    if kind == "guard":
+        for c in fx["cases"]:
+            got = SYL.legacy_safe(c["pieceJson"])
+            want = (c["expected"]["legacySafe"], c["expected"]["legacySafeReasons"])
+            assert got == want, f"{c['name']}: {got} != {want}"
+        return
+
+    pj = fx["pieceJson"]
+    if kind == "heal":
+        piece = _load_piece(pj)
+        assert _grid(piece) == exp["syllables"]
+        if exp.get("legacyRoundTrip"):
+            # flag off (no system): healed tier not written, legacy fields as today
+            assert _saved_legacy(piece) == SYL.stored_legacy(pj)
+            # tier written (dual-write): heal -> project is the identity
+            adopted = _load_piece(pj)
+            adopted.adopt_healed_syllables()
+            assert _saved_legacy(adopted) == SYL.stored_legacy(pj)
+        saved = _saved_legacy(piece)
+        for uid, want in (exp.get("legacyAfterProjection") or {}).items():
+            assert saved[uid] == want, f"{uid}: {saved[uid]} != {want}"
+        loaded = SYL.heal_piece(pj)  # the stored document plus the load-time heal
+        assert _grid(piece) == SYL.syllable_grid(loaded)
+    elif kind == "project":
+        piece = _load_piece(pj)
+        assert _saved_legacy(piece) == exp["legacy"]
+        pack = piece.pack
+        assert [SYL.derive_ipa(s, pack) for s in _all_syllables(piece)] == exp["derivedIpa"]
+        if "nineTone" in exp:
+            assert [SYL.derived_tone(s, pack) for s in _all_syllables(piece)] == exp["nineTone"]
+        if "appliedArticulations" in exp:
+            # the whole articulations object after the projection: a consonant
+            # mirror replaces a pluck/dampen at '0.00'/'1.00'
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                saved = piece.to_json()
+            got = {t["uniqueId"]: t.get("articulations")
+                   for tr in saved["phraseGrid"] for ph in tr for t in ph["trajectoryGrid"][0]}
+            # only the keys the tier writes are listed (uid -> key -> expected)
+            for uid, keys in exp["appliedArticulations"].items():
+                for key, want in keys.items():
+                    have = (got.get(uid) or {}).get(key)
+                    assert have == want, f"{uid}[{key}]: {have} != {want}"
+        # syllables, system and lyricsText round-trip byte-identical
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out = piece.to_json()
+        assert SYL.syllable_grid(out) == SYL.syllable_grid(pj)
+        assert out.get("system") == pj.get("system") and out.get("lyricsText") == pj.get("lyricsText")
+        loaded = pj
+    elif kind == "rehome":
+        before = _load_piece(pj)
+        after = _load_piece(fx["pieceAfterEdit"])
+        dropped = after.rehome_syllables(before)
+        assert _grid(after) == exp["syllables"]
+        assert dropped == exp["dropped"]
+        if exp.get("legacyUnchanged"):
+            assert _saved_legacy(after) == _saved_legacy(before)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            loaded = after.to_json()
+        piece = after
+    else:
+        pytest.fail(f"unknown syllable fixture kind {kind}")
+    assert SYL.legacy_safe(loaded) == (exp["legacySafe"], exp["legacySafeReasons"])
+    assert _split(piece) == (exp["violations"], exp.get("warnings", []))
+
+
+def test_mixed_fixture_is_legacy_safe_after_a_save():
+    """mixed-healed-and-legacy-phrases: as stored it is not legacy-safe (stale
+    'ā' beside the stored syllable); a 0.3.0 save dual-writes, after which it is."""
+    path = [p for p in SYLLABLE_FIXTURES if p.endswith("mixed-healed-and-legacy-phrases.json")]
+    if not path:
+        pytest.skip("idtap-contract checkout not found")
+    piece = _load_piece(_load(path[0])["pieceJson"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert SYL.legacy_safe(piece.to_json()) == (True, [])
+
+
+@pytest.mark.parametrize("path", SYSTEM_FIXTURES, ids=lambda p: os.path.basename(p))
+def test_system_conformance(path):
+    fx = _load(path)
+    pj, exp = fx["pieceJson"], fx["expected"]
+    piece = _load_piece(pj)
+    assert piece.resolved_system == exp["resolved"]
+    assert piece.pack["id"] == exp["pack"]
+    assert piece.syllable_tier_enabled == exp["syllableUi"]
+    assert _split(piece) == (exp["violations"], exp.get("warnings", []))
+    if "derivedIpa" in exp:
+        syls = piece.phrase_grid[0][0].syllables
+        assert [SYL.derive_ipa(s, piece.pack) for s in syls] == exp["derivedIpa"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        out = piece.to_json()
+    assert ("system" in out) == ("system" in pj)
+    if "system" in pj:
+        assert out["system"] == pj["system"]
+
+
+PACK_FILES = sorted(glob.glob(os.path.join(_contract_dir(), "packs", "*.json")))
+
+
+@pytest.mark.parametrize("path", PACK_FILES, ids=lambda p: os.path.basename(p))
+def test_bundled_pack_matches_contract(path):
+    """PROP-9: packs are bundled as data, verbatim; a contract pack change must
+    be re-copied into idtap/packs/."""
+    pid = os.path.basename(path)[:-5]
+    assert SYL.load_pack(pid) == _load(path), f"idtap/packs/{pid}.json differs from the contract"
