@@ -1,6 +1,6 @@
 """Python API package exposing IDTAP data classes and client."""
 
-__version__ = "0.1.58"
+__version__ = "0.1.59"
 
 from .client import SwaraClient, WriteGuardError
 from .constants import CONTRACT_VERSION
