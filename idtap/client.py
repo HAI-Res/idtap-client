@@ -217,6 +217,121 @@ class SwaraClient:
         return None
 
     # ---- API methods ----
+    # ---- model transcription ----
+    TRANSCRIPTION_MODELS = ("student", "rg_world_tx")
+
+    def start_transcription(
+        self,
+        recording_id: str,
+        model: str = "student",
+        voice: str = "M",
+        tonic: Optional[float] = None,
+        title: Optional[str] = None,
+        raga: Optional[str] = None,
+        lam: Optional[float] = None,
+        separate: bool = True,
+    ) -> str:
+        """Queue a model transcription of a recording on the server and return the job id.
+
+        The recording must be one you may view. `model` is "student" (needs `tonic`, Hz) or
+        "rg_world_tx" (estimates Sa when `tonic` is omitted). `separate=False` skips source
+        separation, for solo voice or a ready vocal stem. `lam` is the student's density setting.
+        """
+        if model not in self.TRANSCRIPTION_MODELS:
+            raise ValueError(f"model must be one of {self.TRANSCRIPTION_MODELS}")
+        if voice not in ("M", "F"):
+            raise ValueError("voice must be 'M' or 'F'")
+        if model == "student" and tonic is None:
+            raise ValueError("the student model needs a tonic (Hz)")
+        payload: Dict[str, Any] = {"recordingId": recording_id, "model": model, "voice": voice, "separate": separate}
+        for k, v in (("tonic", tonic), ("title", title), ("raga", raga), ("lam", lam)):
+            if v is not None:
+                payload[k] = v
+        return str(self._post_json("api/transcribe", payload)["jobId"])
+
+    def get_transcription_job(self, job_id: str) -> Dict[str, Any]:
+        """Status of a transcription job: `status` (queued, running, done, failed, cancelled),
+        `events`, and `pieceId` once done."""
+        return self._get(f"api/transcribe/{job_id}")
+
+    def cancel_transcription(self, job_id: str) -> Any:
+        return self._post_json(f"api/transcribe/{job_id}/cancel", {})
+
+    def transcribe(
+        self,
+        recording_id: Optional[str] = None,
+        model: str = "student",
+        where: str = "server",
+        audio_path: Optional[str] = None,
+        on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+        poll_s: float = 2.0,
+        timeout_s: float = 3600.0,
+        **params: Any,
+    ) -> Any:
+        """Transcribe a recording with a model and return the piece JSON.
+
+        where="server": `recording_id` names an uploaded recording; the job runs on the server's
+            workers and the result is a private transcription in your account.
+        where="local": `audio_path` names a file on this machine; needs the `idtap-transcribe`
+            package and its models set up here. Nothing is uploaded and nothing is saved.
+
+        `params` are those of `start_transcription` (voice, tonic, title, raga, lam, separate).
+        `on_event` receives each progress event (a dict with an `event` key) as it arrives.
+        """
+        if where == "local":
+            return self._transcribe_local(audio_path, model, on_event, **params)
+        if where != "server":
+            raise ValueError("where must be 'server' or 'local'")
+        if not recording_id:
+            raise ValueError("where='server' needs recording_id")
+        import time
+        job_id = self.start_transcription(recording_id, model=model, **params)
+        seen, deadline = 0, time.time() + timeout_s
+        while True:
+            job = self.get_transcription_job(job_id)
+            events = job.get("events") or []
+            if on_event:
+                if len(events) < seen:          # the job was requeued and its events restarted
+                    seen = 0
+                for e in events[seen:]:
+                    on_event(e)
+            seen = len(events)
+            status = job.get("status")
+            if status == "done":
+                return self.get_piece(job["pieceId"])
+            if status in ("failed", "cancelled"):
+                err = job.get("error") or {}
+                raise RuntimeError(f"transcription {status}: {err.get('message') or err.get('code') or 'no reason given'}")
+            if time.time() > deadline:
+                raise TimeoutError(f"transcription job {job_id} still {status} after {timeout_s:.0f} s")
+            time.sleep(poll_s)
+
+    @staticmethod
+    def _transcribe_local(audio_path: Optional[str], model: str, on_event: Optional[Callable[[Dict[str, Any]], None]],
+                          separate: bool = True, **params: Any) -> Any:
+        if not audio_path:
+            raise ValueError("where='local' needs audio_path")
+        try:
+            from idtap_transcribe.engine import run_job
+        except ImportError as e:
+            raise RuntimeError("where='local' needs the idtap-transcribe package and its models on this machine") from e
+        import json
+        import tempfile
+        from pathlib import Path
+        chain = None
+        if separate:
+            import os
+            models_dir = os.environ.get("IDTAP_SEP_MODELS")
+            if not models_dir:
+                raise RuntimeError("separation needs IDTAP_SEP_MODELS (the separation checkpoints); pass separate=False for solo voice")
+            from idtap_transcribe.separate import Chain
+            chain = Chain(models_dir)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "piece.json"
+            job = dict(params, audio=str(audio_path), out=str(out), model=model, separate=separate)
+            run_job(job, Path(tmp) / "work", (lambda event, **k: on_event({"event": event, **k})) if on_event else (lambda *a, **k: None), chain)
+            return json.loads(out.read_text())
+
     def get_piece(self, piece_id: str, fetch_rule_set: bool = True) -> Any:
         """Return transcription JSON for the given id.
         
